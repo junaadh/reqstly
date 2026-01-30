@@ -82,20 +82,20 @@ reqstly/
 │   └── Dockerfile
 │
 ├── infra/            # Infrastructure configuration
-│   ├── caddy/
-│   │   └── Caddyfile         # Reverse proxy config
-│   ├── prometheus/
-│   │   ├── prometheus.yml    # Scrape configs
-│   │   └── alerts.yml        # Alert rules
-│   ├── loki/
-│   │   └── loki.yml          # Log retention
-│   ├── promtail/
-│   │   └── promtail.yml      # Log collection
-│   ├── grafana/
-│   │   ├── provisioning/     # Auto-provisioning
-│   │   └── dashboards/       # Dashboard definitions
+│   ├── proxy/
+│   │   └── caddy/
+│   │       └── Caddyfile         # Reverse proxy config (Phase 5)
+│   ├── observability/
+│   │   ├── grafana/
+│   │   │   └── provisioning/     # Auto-provisioned datasources/dashboards
+│   │   ├── prometheus/
+│   │   │   └── prometheus.yml    # Scrape configs
+│   │   ├── loki/
+│   │   │   └── loki.yml          # Log retention
+│   │   └── promtail/
+│   │       └── promtail.yml      # Log collection
 │   ├── docker-compose.yml
-│   └── docker-compose.monitoring.yml
+│   └── README.md                # Infrastructure documentation
 │
 ├── scripts/          # Automation scripts
 │   ├── setup-vps.sh         # VPS hardening and setup
