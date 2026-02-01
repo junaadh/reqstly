@@ -42,10 +42,14 @@ pub struct Settings {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let run_mode = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+        let run_mode =
+            env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         let config = Config::builder()
-            .add_source(File::with_name(&format!("config/{}.toml", run_mode)).required(false))
+            .add_source(
+                File::with_name(&format!("config/{}.toml", run_mode))
+                    .required(false),
+            )
             .add_source(File::with_name("config/default").required(false))
             .add_source(Environment::default().separator("__"))
             .build()?;
@@ -66,7 +70,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             database: Database {
-                url: "postgresql://reqstly:password@localhost:5432/reqstly".to_string(),
+                url: "postgresql://reqstly:password@localhost:5432/reqstly"
+                    .to_string(),
             },
             server: Server { port: 3000 },
             jwt: Jwt {

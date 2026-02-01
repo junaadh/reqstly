@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     azure_ad_subject VARCHAR(255) UNIQUE,
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Indexes for users
@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS requests (
     category VARCHAR(50) NOT NULL CHECK (category IN ('IT', 'Ops', 'Admin', 'HR')),
     status VARCHAR(50) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved')),
     priority VARCHAR(50) NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Indexes for requests
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS passkey_credentials (
     public_key TEXT NOT NULL,
     counter INTEGER NOT NULL DEFAULT 0,
     transports VARCHAR(50)[],
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Indexes for passkey_credentials
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash VARCHAR(255) UNIQUE NOT NULL,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Indexes for sessions
@@ -67,11 +67,11 @@ CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    request_id UUID REFERENCES requests(id) ON DELETE SET NULL,
-    action VARCHAR(50) NOT NULL CHECK (action IN ('created', 'updated', 'deleted', 'status_changed')),
+    request_id UUID NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+    action VARCHAR(50) NOT NULL DEFAULT 'status_changed' CHECK (action IN ('created', 'updated', 'deleted', 'status_changed')),
     old_value JSONB,
     new_value JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Indexes for audit_logs

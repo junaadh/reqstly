@@ -1,12 +1,14 @@
+mod auth;
 mod config;
 mod db;
+mod error;
+mod handlers;
+mod metrics;
+mod models;
 
 use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
+    Json, extract::State, http::StatusCode, response::IntoResponse,
     routing::get,
-    Json,
 };
 use db::DbPool;
 use serde_json::json;
@@ -23,14 +25,16 @@ async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "reqstly_backend=info,tower_http=debug,axum=trace".into()),
+                .unwrap_or_else(|_| {
+                    "reqstly_backend=info,tower_http=debug,axum=trace".into()
+                }),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     // Load configuration
-    let settings = config::Settings::from_env()
-        .expect("Failed to load configuration");
+    let settings =
+        config::Settings::from_env().expect("Failed to load configuration");
 
     tracing::info!("Starting Reqstly backend on port {}", settings.server.port);
 
@@ -62,16 +66,12 @@ async fn main() {
         .await
         .expect("Failed to bind to address");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server error");
+    axum::serve(listener, app).await.expect("Server error");
 }
 
 async fn health_check(State(pool): State<DbPool>) -> impl IntoResponse {
     // Test database connection
-    let result = sqlx::query("SELECT 1")
-        .fetch_one(&pool)
-        .await;
+    let result = sqlx::query("SELECT 1").fetch_one(&pool).await;
 
     let status = if result.is_ok() {
         "healthy"

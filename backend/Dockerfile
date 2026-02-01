@@ -1,53 +1,54 @@
-# Development stage
-FROM rust:1.83-slim as development
+# ---------- Base ----------
+FROM rust:slim AS base
 
-# Install dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy Cargo files
+# ---------- Dependency cache ----------
+FROM base AS deps
+
+# Copy manifest files to cache dependencies
 COPY Cargo.toml Cargo.lock ./
 
-# Create a dummy main.rs to build dependencies
+# Dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-
-# Build dependencies
-RUN cargo build || true
+RUN cargo build --release || true
 RUN rm -rf src
 
-# Copy source code
-COPY src ./src
-COPY migrations ./migrations
+# Install sqlx CLI for migrations
+RUN cargo install sqlx-cli --no-default-features --features postgres
 
-# Build the application
-RUN cargo build
+# ---------- Builder ----------
+FROM base AS builder
 
-# Development runner
-CMD ["cargo", "run"]
-
-# Production builder stage
-FROM rust:1.83-slim as builder
-
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy source and manifests
+# Copy built dependencies to speed up build
+COPY --from=deps /app/target /app/target
 COPY . .
 
 # Build the application in release mode
 RUN cargo build --release
 
-# Production stage
-FROM debian:bookworm-slim as production
+# ---------- Development ----------
+FROM base AS development
+
+# Copy sqlx CLI from deps
+COPY --from=deps /usr/local/cargo/bin/sqlx /usr/local/cargo/bin/sqlx
+COPY . .
+
+WORKDIR /app
+
+# Run dev server
+CMD ["cargo", "run"]
+
+# ---------- Runtime (Production) ----------
+FROM debian:bookworm-slim AS runtime
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -55,28 +56,15 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser
-
 WORKDIR /app
 
-# Copy the binary from builder
+# Copy the release binary from builder
 COPY --from=builder /app/target/release/reqstly_backend /app/reqstly_backend
 
-# Copy migrations
+# Copy migrations (needed for sqlx at runtime if you run migrations)
 COPY --from=builder /app/migrations /app/migrations
 
-# Change ownership
-RUN chown -R appuser:appuser /app
-
-USER appuser
-
-# Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
-
-# Run the application
+# Run the backend in production
 CMD ["/app/reqstly_backend"]
