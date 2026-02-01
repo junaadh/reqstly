@@ -4,7 +4,11 @@
 :80 {
     # Health check endpoint (direct response)
     handle /health {
-        respond "OK" 200
+        header {
+            X-Service "caddy"
+            Content-Type application/json
+        }
+        respond `{"status":"ok","service":"caddy"}` 200
     }
 
     # Grafana dashboards
