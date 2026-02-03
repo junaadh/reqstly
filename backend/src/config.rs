@@ -18,14 +18,14 @@ pub struct Jwt {
     pub expiration_hours: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AzureAd {
     pub client_id: String,
     pub tenant_id: String,
     pub client_secret: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Passkey {
     pub rp_id: String,
     pub origin: String,

@@ -1,6 +1,5 @@
-// Authentication module
-// This will be implemented in Chunk 2
-
+pub mod auth_context;
 pub mod azure;
 pub mod middleware;
 pub mod passkey;
+pub mod session_token;

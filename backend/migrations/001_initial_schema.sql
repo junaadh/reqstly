@@ -4,7 +4,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    azure_ad_subject VARCHAR(255) UNIQUE,
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -12,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Indexes for users
-CREATE INDEX idx_users_azure_ad_subject ON users(azure_ad_subject) WHERE azure_ad_subject IS NOT NULL;
+CREATE INDEX idx_users_id ON users(id);
 CREATE INDEX idx_users_email ON users(email);
 
 -- Requests table
@@ -54,7 +53,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash VARCHAR(255) UNIQUE NOT NULL,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -79,6 +78,21 @@ CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id) WHERE user_id IS NOT 
 CREATE INDEX idx_audit_logs_request_id ON audit_logs(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX idx_audit_logs_action ON audit_logs(action);
 CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at DESC);
+
+-- External identities for users
+CREATE TABLE IF NOT EXISTS external_identities (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL CHECK (provider IN ('azure_ad', 'passkey')),
+    subject VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE (provider, subject)
+);
+
+-- Indexes for external_identities
+CREATE INDEX idx_external_identities_user_id ON external_identities(user_id);
+CREATE INDEX idx_external_identities_provider_subject ON external_identities(provider, subject);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

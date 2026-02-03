@@ -22,15 +22,17 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release || true
 RUN rm -rf src
 
-# Install sqlx CLI for migrations
-RUN cargo install sqlx-cli --no-default-features --features postgres
-
 # ---------- Builder ----------
 FROM base AS builder
 
 # Copy built dependencies to speed up build
 COPY --from=deps /app/target /app/target
 COPY . .
+
+# Install sqlx CLI for migrations
+RUN cargo install sqlx-cli --no-default-features --features postgres
+
+RUN cargo sqlx prepare
 
 # Build the application in release mode
 RUN cargo build --release
