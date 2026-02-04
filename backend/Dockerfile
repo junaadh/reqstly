@@ -22,32 +22,38 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release || true
 RUN rm -rf src
 
-# ---------- Builder ----------
-FROM base AS builder
-
-# Copy built dependencies to speed up build
-COPY --from=deps /app/target /app/target
-COPY . .
-
-# Install sqlx CLI for migrations
+# Install sqlx CLI for migrations (used by dev + migrate service)
 RUN cargo install sqlx-cli --no-default-features --features postgres
-
-RUN cargo sqlx prepare
-
-# Build the application in release mode
-RUN cargo build --release
 
 # ---------- Development ----------
 FROM base AS development
 
 # Copy sqlx CLI from deps
 COPY --from=deps /usr/local/cargo/bin/sqlx /usr/local/cargo/bin/sqlx
+COPY --from=deps /usr/local/cargo/bin/cargo-sqlx /usr/local/cargo/bin/cargo-sqlx
 COPY . .
 
 WORKDIR /app
 
+ENV SQLX_OFFLINE=true
+
 # Run dev server
 CMD ["cargo", "run"]
+
+# ---------- Builder ----------
+FROM base AS builder
+
+# Copy built dependencies to speed up build
+COPY --from=deps /app/target /app/target
+COPY --from=deps /usr/local/cargo/bin/sqlx /usr/local/cargo/bin/sqlx
+COPY --from=deps /usr/local/cargo/bin/cargo-sqlx /usr/local/cargo/bin/cargo-sqlx
+COPY . .
+
+# Use offline metadata if present (.sqlx/) to avoid build-time DB dependency
+ENV SQLX_OFFLINE=true
+
+# Build the application in release mode
+RUN cargo build --release
 
 # ---------- Runtime (Production) ----------
 FROM debian:bookworm-slim AS runtime

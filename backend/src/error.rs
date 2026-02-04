@@ -22,6 +22,12 @@ pub enum AppError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Forbidden error: {0}")]
+    Forbidden(String),
+
+    #[error("Reddis error: {0}")]
+    RedisError(#[from] redis::RedisError),
 }
 
 impl IntoResponse for AppError {
@@ -33,23 +39,49 @@ impl IntoResponse for AppError {
             AppError::Database(err) => {
                 // Map specific database errors to appropriate HTTP status codes
                 match &err {
-                    sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
+                    sqlx::Error::RowNotFound => (
+                        StatusCode::NOT_FOUND,
+                        "Resource not found".to_string(),
+                    ),
                     sqlx::Error::Database(db_err) => {
                         if let Some(code) = db_err.code() {
                             match code.as_ref() {
-                                "23505" => (StatusCode::CONFLICT, "Resource already exists".to_string()),
-                                "23503" => (StatusCode::BAD_REQUEST, "Referenced resource doesn't exist".to_string()),
-                                "23502" => (StatusCode::BAD_REQUEST, "Missing required field".to_string()),
-                                _ => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", db_err)),
+                                "23505" => (
+                                    StatusCode::CONFLICT,
+                                    "Resource already exists".to_string(),
+                                ),
+                                "23503" => (
+                                    StatusCode::BAD_REQUEST,
+                                    "Referenced resource doesn't exist"
+                                        .to_string(),
+                                ),
+                                "23502" => (
+                                    StatusCode::BAD_REQUEST,
+                                    "Missing required field".to_string(),
+                                ),
+                                _ => (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    format!("Database error: {}", db_err),
+                                ),
                             }
                         } else {
-                            (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", db_err))
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("Database error: {}", db_err),
+                            )
                         }
                     }
-                    _ => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", err)),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Database error: {}", err),
+                    ),
                 }
             }
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            AppError::RedisError(err) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+            }
         };
 
         tracing::error!("AppError: {} - {}", status, message);
@@ -58,7 +90,8 @@ impl IntoResponse for AppError {
             status,
             Json(json!({
                 "error": message
-            }))
-        ).into_response()
+            })),
+        )
+            .into_response()
     }
 }

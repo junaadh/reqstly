@@ -1,260 +1,274 @@
-// use crate::config::AzureAd;
-// use crate::error::AppError;
-// use crate::models::User;
-// use openidconnect::{
-//     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-//     RedirectUrl, Scope, TokenResponse,
-//     core::{CoreClient, CoreProviderMetadata},
-//     reqwest::{self, async_http_client},
-// };
-// use sqlx::PgPool;
-// use url::Url;
+use std::collections::HashMap;
 
-// /// Azure AD authorization URL with state token
-// pub struct AuthorizationUrlResult {
-//     pub url: Url,
-//     pub state: CsrfToken,
-//     pub nonce: Nonce,
-// }
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Redirect},
+};
+use openidconnect::{
+    AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
+    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    reqwest::async_http_client,
+};
+use redis::Commands;
+use tower_cookies::{Cookie, Cookies};
 
-// /// Generate Azure AD authorization URL
-// /// Returns the URL to redirect the user to, along with state/nonce for verification
-// pub fn generate_authorization_url(
-//     config: &AzureAd,
-//     redirect_uri: &str,
-// ) -> Result<AuthorizationUrlResult, AppError> {
-//     let client_id = ClientId::new(config.client_id.clone());
-//     let client_secret = ClientSecret::new(config.client_secret.clone());
-//     let redirect_url =
-//         RedirectUrl::new(redirect_uri.to_string()).map_err(|e| {
-//             AppError::Internal(format!("Invalid redirect URL: {e}"))
-//         })?;
+use crate::{
+    AppState,
+    config::AzureAd,
+    error::AppError,
+    models::{
+        external_identities::{AuthProvider, ExternalIdentity},
+        session::Session,
+        user::User,
+    },
+};
 
-//     // Create Azure AD client
-//     let issuer_url = IssuerUrl::new(format!(
-//         "https://login.microsoftonline.com/{}",
-//         config.tenant_id
-//     ))
-//     .map_err(|e| AppError::Internal(format!("Invalid issuer URL: {e}")))?;
+const REDIS_STATE_TTL_SECS: u64 = 300;
 
-//     let provider_metadata =
-//         CoreProviderMetadata::discover(&issuer_url, reqwest::http_client)
-//             .map_err(|e| {
-//                 AppError::Internal(format!(
-//                     "Invalid Azure Provider Metadata: {e}"
-//                 ))
-//             })?;
+pub async fn store_state_nonce_verifier(
+    redis: &redis::Client,
+    state: &CsrfToken,
+    nonce: &Nonce,
+    verifier: &PkceCodeVerifier,
+) -> Result<(), AppError> {
+    let mut conn = redis.get_connection().map_err(AppError::from)?;
+    let key = format!("oidc_state:{}", state.secret());
+    let value = serde_json::to_string(&(nonce.secret(), verifier.secret()))
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to serialize PKCE: {e}"))
+        })?;
+    conn.set_ex(key, value, REDIS_STATE_TTL_SECS)
+        .map_err(AppError::from)
+}
 
-//     // Build the OpenID Connect client
-//     let client = CoreClient::from_provider_metadata(
-//         provider_metadata,
-//         client_id,
-//         Some(client_secret),
-//     )
-//     .set_redirect_uri(redirect_url);
+pub async fn consume_state_nonce_verifier(
+    redis: &redis::Client,
+    state: &CsrfToken,
+) -> Result<(Nonce, PkceCodeVerifier), AppError> {
+    let mut conn = redis.get_connection().map_err(AppError::from)?;
+    let key = format!("oidc_state:{}", state.secret());
+    let nonce: Option<String> = conn.get(&key).map_err(AppError::from)?;
 
-//     // Generate CSRF token and nonce
-//     let state = CsrfToken::new_random();
-//     let nonce = Nonce::new_random();
+    match nonce {
+        Some(n) => {
+            let _: () = conn.del(&key).map_err(AppError::from)?;
+            let (nonce_str, verifier_str) =
+                serde_json::from_str::<(String, String)>(&n).map_err(|_| {
+                    AppError::Unauthorized("Invalid PKCE data".into())
+                })?;
 
-//     // Generate authorization URL
-//     let auth_url = client
-//         .authorize_url(
-//             openidconnect::core::CoreAuthenticationFlow::AuthorizationCode,
-//             move || state,
-//             move || nonce,
-//         )
-//         .add_scope(Scope::new("openid".to_string()))
-//         .add_scope(Scope::new("email".to_string()))
-//         .add_scope(Scope::new("profile".to_string()))
-//         .url();
+            Ok((Nonce::new(nonce_str), PkceCodeVerifier::new(verifier_str)))
+        }
+        None => Err(AppError::Unauthorized(
+            "Invalid or expired state".to_string(),
+        )),
+    }
+}
 
-//     Ok(AuthorizationUrlResult {
-//         url: auth_url.0,
-//         state: auth_url.1,
-//         nonce: auth_url.2,
-//     })
-// }
+#[derive(Clone)]
+pub struct AzureOidc {
+    pub client: CoreClient,
+    pub redirect_uri: String,
+}
 
-// /// Exchange authorization code for tokens and validate JWT
-// /// Returns the user (created or updated)
-// pub async fn exchange_code_for_token_and_get_user(
-//     config: &AzureAd,
-//     code: &str,
-//     state: CsrfToken,
-//     nonce: Nonce,
-//     redirect_uri: &str,
-//     pool: &PgPool,
-// ) -> Result<(User, String), AppError> {
-//     let client_id = ClientId::new(config.client_id.clone());
-//     let client_secret = ClientSecret::new(config.client_secret.clone());
-//     let redirect_url =
-//         RedirectUrl::new(redirect_uri.to_string()).map_err(|e| {
-//             AppError::Internal(format!("Invalid redirect URL: {}", e))
-//         })?;
+impl AzureOidc {
+    pub async fn new(
+        config: &AzureAd,
+        redirect_uri: String,
+    ) -> Result<Self, AppError> {
+        let issuer = IssuerUrl::new(format!(
+            "https://login.microsoftonline.com/{}/v2.0",
+            config.tenant_id
+        ))
+        .map_err(|err| {
+            AppError::Internal(format!(
+                "Failed to create azure issuerer: {err}"
+            ))
+        })?;
 
-//     let issuer_url = IssuerUrl::new(format!(
-//         "https://login.microsoftonline.com/{}",
-//         config.tenant_id
-//     ))
-//     .map_err(|e| AppError::Internal(format!("Invalid issuer URL: {e}")))?;
+        let metadata =
+            CoreProviderMetadata::discover_async(issuer, async_http_client)
+                .await
+                .map_err(|err| AppError::Internal(err.to_string()))?;
 
-//     let provider_metadata =
-//         CoreProviderMetadata::discover(&issuer_url, reqwest::http_client)
-//             .map_err(|e| {
-//                 AppError::Internal(format!(
-//                     "Invalid Azure Provider Metadata: {e}"
-//                 ))
-//             })?;
+        let client = CoreClient::from_provider_metadata(
+            metadata,
+            ClientId::new(config.client_id.clone()),
+            Some(ClientSecret::new(config.client_secret.clone())),
+        )
+        .set_redirect_uri(
+            RedirectUrl::new(redirect_uri.to_string())
+                .map_err(|err| AppError::Internal(err.to_string()))?,
+        );
 
-//     // Create Azure AD client
-//     let client = CoreClient::from_provider_metadata(
-//         provider_metadata,
-//         client_id,
-//         Some(client_secret),
-//     )
-//     .set_redirect_uri(redirect_url);
+        Ok(Self {
+            client,
+            redirect_uri,
+        })
+    }
+}
 
-//     // Exchange code for token
-//     let code = AuthorizationCode::new(code.to_string());
-//     let token_response = client
-//         .exchange_code(code)
-//         .request_async(async_http_client)
-//         .await
-//         .map_err(|e| {
-//             AppError::Internal(format!(
-//                 "Failed to exchange code for token: {}",
-//                 e
-//             ))
-//         })?;
+pub async fn azure_login(
+    State(state): State<AppState>,
+) -> Result<Redirect, AppError> {
+    let azure = state.azure_client.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("Azure AD is not configured".to_string())
+    })?;
+    let (pkce_challenge, pkce_code_verifier) =
+        PkceCodeChallenge::new_random_sha256();
 
-//     // Extract ID token
-//     let id_token = token_response.id_token().ok_or_else(|| {
-//         AppError::Internal("No ID token in response".to_string())
-//     })?;
+    let (auth_url, state_token, nonce_token) = azure
+        .client
+        .authorize_url(
+            CoreAuthenticationFlow::AuthorizationCode,
+            CsrfToken::new_random,
+            Nonce::new_random,
+        )
+        .set_pkce_challenge(pkce_challenge)
+        .add_scope(Scope::new("openid".into()))
+        .add_scope(Scope::new("email".into()))
+        .add_scope(Scope::new("profile".into()))
+        .url();
 
-//     // Verify ID token claims
-//     let claims = id_token
-//         .claims(&client.id_token_verifier(), &nonce)
-//         // claims(&client.id_token_verifier())
-//         .map_err(|e| {
-//             AppError::Internal(format!(
-//                 "Failed to verify ID token claims: {}",
-//                 e
-//             ))
-//         })?;
+    store_state_nonce_verifier(
+        &state.redis,
+        &state_token,
+        &nonce_token,
+        &pkce_code_verifier,
+    )
+    .await?;
 
-//     if let Some(expected_token_hash) =
+    Ok(Redirect::to(auth_url.as_str()))
+}
 
-//     // Verify nonce
-//     if claims
-//         .nonce()
-//         .unwrap_or(&Nonce::new("".to_string()))
-//         .secret()
-//         != nonce
-//     {
-//         return Err(AppError::Unauthorized("Invalid nonce".to_string()));
-//     }
+pub async fn azure_callback(
+    Query(params): Query<HashMap<String, String>>,
+    State(state): State<AppState>,
+    cookies: Cookies,
+) -> Result<impl IntoResponse, AppError> {
+    let azure = state.azure_client.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("Azure AD is not configured".to_string())
+    })?;
+    if let Some(err) = params.get("error") {
+        let desc = params
+            .get("error_description")
+            .map(String::as_str)
+            .unwrap_or("no description");
 
-//     // Extract user information
-//     let email = claims
-//         .email()
-//         .ok_or_else(|| AppError::Internal("No email in ID token".to_string()))?
-//         .to_string();
+        return Err(AppError::Unauthorized(format!(
+            "Azure error: {err} ({desc})"
+        )));
+    }
 
-//     let name = claims.name().unwrap_or(&email).to_string();
+    let code = params
+        .get("code")
+        .ok_or(AppError::Unauthorized("Missing Code".into()))?;
+    let state_str = params
+        .get("state")
+        .ok_or(AppError::Unauthorized("Missing State".into()))?;
+    let csrf_token = CsrfToken::new(state_str.to_owned());
 
-//     // Azure AD subject identifier
-//     let subject = claims.subject().identifier();
+    let (nonce, pkce_code_verifier) =
+        consume_state_nonce_verifier(&state.redis, &csrf_token).await?;
 
-//     // Create or update user from Azure AD
-//     let user = User::create_from_azure(pool, subject, &email, &name).await?;
+    let token_response = azure
+        .client
+        .exchange_code(AuthorizationCode::new(code.to_owned()))
+        .set_pkce_verifier(pkce_code_verifier)
+        .request_async(async_http_client)
+        .await
+        .map_err(|e| {
+            AppError::Unauthorized(format!("Token exchange failed: {e}"))
+        })?;
 
-//     // Create session
-//     let (session, token) =
-//         crate::models::Session::create(pool, user.id).await?;
+    let id_token = token_response
+        .id_token()
+        .ok_or_else(|| AppError::Unauthorized("Missing ID token".to_owned()))?;
 
-//     Ok((user, token))
-// }
+    let claims = id_token
+        .claims(&azure.client.id_token_verifier(), &nonce)
+        .map_err(|e| {
+            AppError::Unauthorized(format!("ID token validation failed: {e}"))
+        })?;
 
-// /// Validate Azure AD JWT token and get user
-// /// This is used for validating tokens from Azure AD (not session tokens)
-// pub async fn validate_azure_jwt(
-//     jwt: &str,
-//     config: &AzureAd,
-//     pool: &PgPool,
-// ) -> Result<User, AppError> {
-//     // Parse the JWT without full validation (simplified)
-//     // In production, you'd verify the signature against Azure AD's public keys
-//     let parts: Vec<&str> = jwt.split('.').collect();
-//     if parts.len() != 3 {
-//         return Err(AppError::Unauthorized("Invalid token format".to_string()));
-//     }
+    let email = claims
+        .email()
+        .map(|e| e.to_string())
+        .or_else(|| claims.preferred_username().map(|u| u.to_string()));
 
-//     // Decode payload (base64url)
-//     let payload = parts[1];
-//     let payload = base64_url_decode(payload)?;
+    let name = claims
+        .name()
+        .and_then(|n| n.get(None))
+        .map(|n| n.to_string());
 
-//     // Parse as JSON to extract subject
-//     let claims: AzureJwtClaims =
-//         serde_json::from_str(&payload).map_err(|_| {
-//             AppError::Unauthorized("Invalid token payload".to_string())
-//         })?;
+    let subject = claims.subject().to_string();
 
-//     // Find user by Azure AD subject
-//     let user = User::find_by_azure_subject(pool, &claims.sub)
-//         .await?
-//         .ok_or_else(|| AppError::Unauthorized("User not found".to_string()))?;
+    let provider = AuthProvider::AzureAd;
 
-//     Ok(user)
-// }
+    let (user, identity) =
+        match ExternalIdentity::find_by_provider_subject(
+            &state.db,
+            provider,
+            &subject,
+        )
+        .await?
+        {
+            Some(identity) => {
+                let user = User::find_by_id(&state.db, identity.user_id)
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::Internal(
+                            "External identity found but user missing"
+                                .to_string(),
+                        )
+                    })?;
+                (user, Some(identity))
+            }
+            None => {
+                let user = ExternalIdentity::resolve_user_from_external_identity(
+                    &state.db,
+                    provider,
+                    &subject,
+                    email.as_deref(),
+                    name.as_deref(),
+                )
+                .await?;
 
-// #[derive(serde::Deserialize)]
-// struct AzureJwtClaims {
-//     sub: String,
-//     email: Option<String>,
-//     name: Option<String>,
-// }
+                let identity = ExternalIdentity::find_by_provider_subject(
+                    &state.db,
+                    provider,
+                    &subject,
+                )
+                .await?;
 
-// fn base64_url_decode(input: &str) -> Result<String, AppError> {
-//     use base64::prelude::*;
+                (user, identity)
+            }
+        };
 
-//     // Add padding if needed
-//     let mut input = input.to_string();
-//     while input.len() % 4 != 0 {
-//         input.push('=');
-//     }
+    let identity = identity.ok_or_else(|| {
+        AppError::Internal("External identity not created".to_string())
+    })?;
 
-//     let decoded = BASE64_URL_SAFE_NO_PAD.decode(input).map_err(|_| {
-//         AppError::Unauthorized("Invalid base64 encoding".to_string())
-//     })?;
+    let (_session, token) =
+        Session::create(&state.db, user.id, Some(identity), provider).await?;
 
-//     String::from_utf8(decoded).map_err(|_| {
-//         AppError::Unauthorized("Invalid UTF-8 in token".to_string())
-//     })
-// }
+    let mut cookie = Cookie::new("session", token.into_inner());
+    cookie.set_http_only(true);
+    cookie.set_secure(false);
+    cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
+    cookie.set_path("/");
+    cookies.add(cookie);
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     #[ignore]
-//     fn test_generate_authorization_url() {
-//         let config = AzureAd {
-//             client_id: "test_client_id".to_string(),
-//             tenant_id: "test_tenant_id".to_string(),
-//             client_secret: "test_secret".to_string(),
-//         };
-
-//         let result = generate_authorization_url(
-//             &config,
-//             "http://localhost:3000/auth/azure/callback",
-//         )
-//         .unwrap();
-
-//         assert!(result.url.as_str().contains("login.microsoftonline.com"));
-//         assert!(!result.state.secret().is_empty());
-//         assert!(!result.nonce.secret().is_empty());
-//     }
-// }
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name
+            }
+        })),
+    ))
+}

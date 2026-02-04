@@ -77,6 +77,24 @@ impl ExternalIdentity {
         .map_err(AppError::from)
     }
 
+    pub async fn find_by_id(
+        pool: &PgPool,
+        id: Uuid,
+    ) -> Result<Option<ExternalIdentity>, AppError> {
+        sqlx::query_as!(
+            ExternalIdentity,
+            r#"
+            SELECT id, user_id, provider as "provider: _", subject, email, created_at
+            FROM external_identities
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
     pub async fn find_by_provider_subject(
         pool: &PgPool,
         provider: AuthProvider,
@@ -91,7 +109,7 @@ impl ExternalIdentity {
             WHERE provider = $1 AND subject = $2
             "#,
             provider.to_string(),
-            email
+            subject
         )
         .fetch_optional(pool)
         .await

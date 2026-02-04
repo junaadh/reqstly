@@ -48,10 +48,27 @@ CREATE TABLE IF NOT EXISTS passkey_credentials (
 CREATE INDEX idx_passkey_credentials_user_id ON passkey_credentials(user_id);
 CREATE INDEX idx_passkey_credentials_credential_id ON passkey_credentials(credential_id);
 
+-- External identities for users
+CREATE TABLE IF NOT EXISTS external_identities (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL CHECK (provider IN ('azure_ad', 'passkey')),
+    subject VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE (provider, subject)
+);
+
+-- Indexes for external_identities
+CREATE INDEX idx_external_identities_user_id ON external_identities(user_id);
+CREATE INDEX idx_external_identities_provider_subject ON external_identities(provider, subject);
+
 -- Sessions table
 CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    external_identity_id UUID REFERENCES external_identities(id) ON DELETE SET NULL,
+    provider VARCHAR(50) NOT NULL CHECK (provider IN ('azure_ad', 'passkey')),
     token_hash VARCHAR(255) UNIQUE NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -59,7 +76,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 -- Indexes for sessions
 CREATE INDEX idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX idx_sessions_token_hash ON sessions(token_hash);
+CREATE UNIQUE INDEX idx_sessions_token_hash ON sessions(token_hash);
+CREATE INDEX idx_sessions_external_identity_id ON sessions(external_identity_id);
+CREATE INDEX idx_sessions_provider ON sessions(provider);
 CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
 
 -- Audit logs table
@@ -78,21 +97,6 @@ CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id) WHERE user_id IS NOT 
 CREATE INDEX idx_audit_logs_request_id ON audit_logs(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX idx_audit_logs_action ON audit_logs(action);
 CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at DESC);
-
--- External identities for users
-CREATE TABLE IF NOT EXISTS external_identities (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    provider VARCHAR(50) NOT NULL CHECK (provider IN ('azure_ad', 'passkey')),
-    subject VARCHAR(255) NOT NULL,
-    email VARCHAR(255),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    UNIQUE (provider, subject)
-);
-
--- Indexes for external_identities
-CREATE INDEX idx_external_identities_user_id ON external_identities(user_id);
-CREATE INDEX idx_external_identities_provider_subject ON external_identities(provider, subject);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

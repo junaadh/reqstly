@@ -65,8 +65,6 @@ impl User {
         pool: &PgPool,
         user: CreateUser,
     ) -> Result<User, AppError> {
-        let id = Uuid::new_v4();
-
         sqlx::query_as!(
             User,
             r#"
@@ -74,7 +72,6 @@ impl User {
             VALUES ($1, $2)
             RETURNING id, email, name, created_at, updated_at
             "#,
-            id,
             user.email,
             user.name
         )

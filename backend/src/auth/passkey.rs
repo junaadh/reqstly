@@ -36,10 +36,9 @@ pub async fn start_registration(
     _pool: &PgPool,
     _config: &Passkey,
 ) -> Result<PasskeyChallenge, AppError> {
-    // TODO: Implement proper WebAuthn registration challenge
-    // This requires proper state management and webauthn-rs integration
+    // Stub only
     Err(AppError::Internal(
-        "Passkey registration not yet implemented. Please use Azure AD for authentication.".to_string()
+        "Passkey registration not yet implemented.".to_string(),
     ))
 }
 
@@ -51,9 +50,9 @@ pub async fn finish_registration(
     _pool: &PgPool,
     _config: &Passkey,
 ) -> Result<PasskeyCredential, AppError> {
-    // TODO: Implement proper WebAuthn registration verification
+    // Stub only
     Err(AppError::Internal(
-        "Passkey registration not yet implemented. Please use Azure AD for authentication.".to_string()
+        "Passkey registration not yet implemented.".to_string(),
     ))
 }
 
@@ -64,9 +63,9 @@ pub async fn start_authentication(
     _pool: &PgPool,
     _config: &Passkey,
 ) -> Result<PasskeyChallenge, AppError> {
-    // TODO: Implement proper WebAuthn authentication challenge
+    // Stub only
     Err(AppError::Internal(
-        "Passkey authentication not yet implemented. Please use Azure AD for authentication.".to_string()
+        "Passkey authentication not yet implemented.".to_string(),
     ))
 }
 
@@ -77,9 +76,9 @@ pub async fn finish_authentication(
     _pool: &PgPool,
     _config: &Passkey,
 ) -> Result<User, AppError> {
-    // TODO: Implement proper WebAuthn authentication verification
+    // Stub only
     Err(AppError::Internal(
-        "Passkey authentication not yet implemented. Please use Azure AD for authentication.".to_string()
+        "Passkey authentication not yet implemented.".to_string(),
     ))
 }
 
@@ -88,14 +87,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_start_registration() {
-        // Would need test database and config
-        // This is a placeholder for now
+        // Stub
     }
 
     #[tokio::test]
     #[ignore]
     async fn test_start_authentication() {
-        // Would need test database and config
-        // This is a placeholder for now
+        // Stub
     }
 }

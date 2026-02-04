@@ -23,14 +23,30 @@ services:
       retries: 5
     mem_limit: 512m
     cpus: 0.5
-    tmpfs:
-      - /var/lib/postgresql/data
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - reqstly-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: 256m
+    cpus: 0.25
+    volumes:
+      - redis-data:/data
 
   backend:
     build:
       context: ../backend
       target: ${BACKEND_BUILD_TARGET:-development}
     environment:
+      REDIS__URL: redis://redis:6379
       DATABASE__URL: postgresql://${POSTGRES_USER:-reqstly}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-reqstly}
       DATABASE_URL: postgresql://${POSTGRES_USER:-reqstly}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-reqstly}
       RUST__LOG: ${RUST_LOG:-info}
@@ -42,12 +58,17 @@ services:
       PASSKEY__RP_ID: ${RP_ID:-localhost}
       PASSKEY__ORIGIN: ${ORIGIN:-http://localhost:5173}
       SERVER__PORT: 3000
+      SERVER__BASE_URL: ${SERVER_BASE_URL:-http://api.localhost}
+    env_file:
+      - ../.env.local
     networks:
       - reqstly-public
       - reqstly-internal
       - reqstly-monitoring
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -65,7 +86,7 @@ services:
       target: development
     command: >
       sh -c "
-        sqlx database create &&
+        sqlx database create || true &&
         sqlx migrate run
       "
     environment:
@@ -84,9 +105,7 @@ services:
       target: development
     container_name: reqstly-frontend
     environment:
-      VITE_API_URL: http://localhost:3000
-    ports:
-      - "5173:5173"
+      VITE_API_URL: http://api.localhost
     networks:
       - reqstly-public
     depends_on:
@@ -105,8 +124,6 @@ services:
       - '--storage.tsdb.retention.time=15d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
-    ports:
-      - "9090:9090"
     networks:
       - reqstly-monitoring
     depends_on:
@@ -125,8 +142,6 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: http://localhost:3001
-    ports:
-      - "3001:3002"
     networks:
       - reqstly-public
       - reqstly-monitoring
@@ -142,9 +157,6 @@ services:
     command:
       - '-config.file=/etc/loki/local-config.yaml'
       - '-config.expand-env=true'
-    ports:
-      - "3100:3100"
-      - "9080:9080"
     networks:
       - reqstly-monitoring
     mem_limit: 1g
@@ -159,8 +171,6 @@ services:
     command:
       - '-config.file=/etc/promtail/config.yml'
       - '-config.expand-env=true'
-    ports:
-      - "9081:9081"
     networks:
       - reqstly-monitoring
     depends_on:
@@ -192,3 +202,7 @@ services:
       - /config
     volumes:
       - ./proxy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+
+volumes:
+  postgres-data:
+  redis-data:

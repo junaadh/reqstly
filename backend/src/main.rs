@@ -2,7 +2,6 @@ mod auth;
 mod config;
 mod db;
 mod error;
-mod handlers;
 mod metrics;
 mod models;
 
@@ -10,18 +9,34 @@ use axum::{
     Json, Router,
     extract::State,
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use config::{AzureAd, Passkey, Settings};
 use db::DbPool;
-use models::User;
+use redis::Commands;
 use serde_json::json;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use tower_cookies::CookieManagerLayer;
+use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use crate::{
+    auth::azure::{AzureOidc, azure_callback, azure_login},
+    auth::auth_context::AuthContext,
+    auth::session_token::SessionToken,
+    error::AppError,
+    models::Session,
+};
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: DbPool,
+    pub redis: redis::Client,
+    pub azure: AzureAd,
+    pub passkey: Passkey,
+    pub azure_client: Option<AzureOidc>,
+}
 
 #[tokio::main]
 async fn main() {
@@ -49,11 +64,8 @@ async fn main() {
         .await
         .expect("Failed to create database pool");
 
-    // Run migrations
-    // tracing::info!("Running database migrations");
-    // db::run_migrations(&pool)
-    //     .await
-    //     .expect("Failed to run migrations");
+    let redis_client = redis::Client::open(settings.redis.url.as_str())
+        .expect("Failed to create redis client");
 
     // Build authentication configs
     let azure_config = AzureAd {
@@ -67,47 +79,55 @@ async fn main() {
         origin: settings.passkey.origin.clone(),
     };
 
+    let azure_client = if azure_config.client_id.is_empty()
+        || azure_config.tenant_id.is_empty()
+        || azure_config.client_secret.is_empty()
+    {
+        tracing::warn!(
+            "Azure AD config missing; Azure login disabled until set"
+        );
+        None
+    } else {
+        Some(
+            AzureOidc::new(
+                &azure_config,
+                format!("{}/auth/azure/callback", &settings.server.base_url),
+            )
+            .await
+            .expect("Failed to create azure client"),
+        )
+    };
+
+    let state = AppState {
+        db: pool.clone(),
+        azure: azure_config,
+        passkey: passkey_config,
+        redis: redis_client,
+        azure_client,
+    };
+
+    let auth_routes = Router::new()
+        .route("/azure/login", get(azure_login))
+        .route("/azure/callback", get(azure_callback))
+        // .route("/passkey/login/start", post(passkey_login_start))
+        // .route("/passkey/login/finish", post(passkey_login_finish))
+        // .route("/passkey/register/start", post(passkey_register_start))
+        // .route("/passkey/register/finish", post(passkey_register_finish))
+        .route("/logout", post(logout))
+        .route("/me", get(me));
+
     // Build our application with routes
     let app = Router::new()
         // Health and metrics (public)
         .route("/health", get(health_check))
         .route("/metrics", get(metrics))
-        // Auth: Azure AD (public)
-        // .route("/auth/azure/login", get(azure_login))
-        // .route("/auth/azure/callback", get(azure_callback))
-        // Auth: Passkey authentication (public)
-        // .route("/auth/passkey/login/start", post(passkey_login_start))
-        // .route("/auth/passkey/login/finish", post(passkey_login_finish))
-        // // Auth: Passkey registration (protected - requires auth)
-        // .route("/auth/passkey/register/start", post(passkey_register_start))
-        // .route(
-        //     "/auth/passkey/register/finish",
-        //     post(passkey_register_finish),
-        // )
-        // Auth: Logout (protected)
-        // .route("/auth/logout", post(logout))
-        // // Auth: Get current user (protected)
-        // .route("/auth/me", get(me))
+        .nest("/auth", auth_routes)
         // Middleware
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         // State
-        .with_state(pool.clone())
-        .with_state(azure_config)
-        .with_state(passkey_config);
-
-    // Add DbPool to request extensions for middleware access
-    // let app = app.layer(axum::middleware::from_fn(
-    //     |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
-    //         // Clone pool for this request
-    //         let pool_clone = pool.clone();
-    //         // Add to request extensions
-    //         req.extensions_mut().insert(pool_clone);
-    //         // Continue to next handler
-    //         Ok(next.run(req).await)
-    //     },
-    // ));
+        .with_state(state);
 
     // Create socket address
     let addr = SocketAddr::from(([0, 0, 0, 0], settings.server.port));
@@ -122,11 +142,17 @@ async fn main() {
     axum::serve(listener, app).await.expect("Server error");
 }
 
-async fn health_check(State(pool): State<DbPool>) -> impl IntoResponse {
+async fn health_check(State(app): State<AppState>) -> Response {
     // Test database connection
-    let result = sqlx::query("SELECT 1").fetch_one(&pool).await;
+    let pg_result = sqlx::query("SELECT 1").fetch_one(&app.db).await;
+    let mut redis_conn =
+        match app.redis.get_connection().map_err(AppError::from) {
+            Ok(conn) => conn,
+            Err(err) => return err.into_response(),
+        };
+    let rd_result: Result<String, _> = redis_conn.ping();
 
-    let status = if result.is_ok() {
+    let status = if pg_result.is_ok() && rd_result.is_ok() {
         "healthy"
     } else {
         "unhealthy"
@@ -140,6 +166,46 @@ async fn health_check(State(pool): State<DbPool>) -> impl IntoResponse {
             "version": "0.1.0"
         })),
     )
+        .into_response()
+}
+
+async fn logout(
+    _auth: AuthContext,
+    State(state): State<AppState>,
+    cookies: Cookies,
+) -> Result<Response, AppError> {
+    let session_cookie = cookies
+        .get("session")
+        .ok_or(AppError::BadRequest("No session cookie found".to_string()))?;
+
+    Session::invalidate(
+        &state.db,
+        &SessionToken::new(session_cookie.value().to_string()),
+    )
+    .await?;
+
+    let mut cookie = Cookie::from("session");
+    cookie.set_path("/");
+    cookie.set_max_age(tower_cookies::cookie::time::Duration::ZERO);
+    cookies.add(cookie);
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Logged out successfully"
+        })),
+    )
+        .into_response())
+}
+
+async fn me(auth: AuthContext) -> impl IntoResponse {
+    Json(json!({
+        "id": auth.user.id,
+        "email": auth.user.email,
+        "name": auth.user.name,
+        "provider": auth.provider().to_string(),
+        "federated": auth.is_federated()
+    }))
 }
 
 async fn metrics() -> impl IntoResponse {

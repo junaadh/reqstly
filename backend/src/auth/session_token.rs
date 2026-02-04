@@ -7,6 +7,10 @@ use crate::error::AppError;
 pub struct SessionToken(String);
 
 impl SessionToken {
+    pub fn new(token: String) -> Self {
+        Self(token)
+    }
+
     pub fn into_inner(self) -> String {
         self.0
     }
