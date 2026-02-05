@@ -1,74 +1,79 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import type { ReactNode } from 'react'
-
-interface User {
-  id: string
-  email: string
-  name: string
-}
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { authApi, ApiError } from '../api/client';
+import type { User } from '../types';
 
 interface AuthContextType {
-  user: User | null
-  loading: boolean
-  refresh: () => Promise<void>
-  logout: () => Promise<void>
+  user: User | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  login: () => void;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const refresh = async () => {
+  const fetchUser = async () => {
+    setIsLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}/auth/me`, {
-        credentials: 'include',
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setUser(data)
-      } else {
-        setUser(null)
-      }
+      const data = await authApi.getMe();
+      setUser(data);
     } catch (error) {
-      console.error('Failed to fetch user:', error)
-      setUser(null)
+      if (error instanceof ApiError && error.status === 401) {
+        setUser(null);
+      } else {
+        console.error('Failed to fetch user:', error);
+      }
+      setUser(null);
     } finally {
-      setLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
+
+  // Don't auto-fetch on mount - let user decide to login
+  // Only fetch when explicitly called
+
+  const login = () => {
+    authApi.azureLogin();
+  };
 
   const logout = async () => {
     try {
-      await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      })
+      await authApi.logout();
+      setUser(null);
     } catch (error) {
-      console.error('Logout error:', error)
-    } finally {
-      setUser(null)
-      window.location.href = '/login'
+      console.error('Logout failed:', error);
     }
-  }
+  };
 
-  useEffect(() => {
-    refresh()
-  }, [])
+  const refresh = async () => {
+    await fetchUser();
+  };
 
   return (
-    <AuthContext.Provider value={{ user, loading, refresh, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        isAuthenticated: !!user,
+        login,
+        logout,
+        refresh,
+      }}
+    >
       {children}
     </AuthContext.Provider>
-  )
+  );
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext)
+  const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
+    throw new Error('useAuth must be used within an AuthProvider');
   }
-  return context
+  return context;
 }

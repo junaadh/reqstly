@@ -98,6 +98,8 @@ services:
       - reqstly-internal
     mem_limit: 512m
     cpus: 0.5
+    volumes:
+      - ../backend:/app
 
   frontend:
     build:
@@ -112,11 +114,10 @@ services:
       - backend
     ports:
       - "5173:5173"
-    mem_limit: 8g
-    cpus: 2
+    mem_limit: 2g
+    cpus: 1
     volumes:
-      - ../frontend/src:/usr/src/app/src
-      - ../frontend/public:/usr/src/app/public
+      - ../frontend:/usr/src/app
       - frontend-node-modules:/usr/src/app/node_modules
 
   prometheus:
@@ -192,6 +193,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "2019:2019"
     networks:
       - reqstly-public
     depends_on:

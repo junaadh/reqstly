@@ -1,75 +1,77 @@
-# React + TypeScript + Vite
+# Reqstly Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Minimal Vite + React + TypeScript frontend with Docker support.
 
-Currently, two official plugins are available:
+## Local Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+# Install dependencies
+npm install
 
-## React Compiler
+# Start dev server (with HMR)
+npm run dev
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+# Build for production
+npm run build
 
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Preview production build
+npm run preview
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Docker Compose
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Standalone Frontend Development
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# From frontend directory - start dev server with hot reload
+docker-compose -f docker-compose.dev.yml up
+
+# Build and run in detached mode
+docker-compose -f docker-compose.dev.yml up -d --build
+
+# View logs
+docker-compose -f docker-compose.dev.yml logs -f
+
+# Stop container
+docker-compose -f docker-compose.dev.yml down
 ```
+
+### Full Stack (with Backend, Database, etc.)
+
+```bash
+# From project root - start all services
+docker-compose -f infra/docker-compose.yml up
+
+# Start specific services
+docker-compose -f infra/docker-compose.yml up frontend backend
+
+# Rebuild and start
+docker-compose -f infra/docker-compose.yml up -d --build frontend
+
+# View frontend logs
+docker-compose -f infra/docker-compose.yml logs -f frontend
+```
+
+### Production Build
+
+```bash
+# Build production image
+docker build -t reqstly-frontend --target production .
+
+# Run production container
+docker run -p 5173:5173 reqstly-frontend
+```
+
+## Key Docker Fixes
+
+- **`host: '0.0.0.0'`** in vite.config.ts - Allows external access from Docker
+- **`usePolling: true`** - Fixes file watching issues in Docker containers
+- **Multi-stage build** - Reduces production image size
+- **.dockerignore** - Excludes node_modules and build artifacts
+
+## Tech Stack
+
+- **Vite** - Fast build tool with HMR
+- **React 18** - UI library
+- **TypeScript** - Type safety
+- **React Router** - Client-side routing (ready to use)

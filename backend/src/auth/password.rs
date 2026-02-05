@@ -1,10 +1,11 @@
 use crate::{
+    AppState,
+    error::AppError,
     models::{
+        Session, User,
         external_identities::AuthProvider,
         password::{CreatePassword, Password, PasswordLogin, PasswordSignup},
-        Session, User,
     },
-    AppState, error::AppError,
 };
 use axum::{
     Json, Router,
@@ -13,8 +14,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use tower_cookies::{Cookie, Cookies};
 use serde_json::json;
+use tower_cookies::{Cookie, Cookies};
 
 pub fn create_password_routes() -> Router<AppState> {
     Router::new()
@@ -30,7 +31,10 @@ pub async fn password_signup(
     Json(input): Json<PasswordSignup>,
 ) -> Result<Response, AppError> {
     // Validate input
-    if input.email.is_empty() || input.name.is_empty() || input.password.is_empty() {
+    if input.email.is_empty()
+        || input.name.is_empty()
+        || input.password.is_empty()
+    {
         return Err(AppError::BadRequest(
             "Email, name, and password are required".to_string(),
         ));
@@ -44,7 +48,10 @@ pub async fn password_signup(
     }
 
     // Check if user already exists
-    if User::find_by_email(&state.db, &input.email).await?.is_some() {
+    if User::find_by_email(&state.db, &input.email)
+        .await?
+        .is_some()
+    {
         return Err(AppError::BadRequest(
             "User with this email already exists".to_string(),
         ));
@@ -71,16 +78,15 @@ pub async fn password_signup(
     .await?;
 
     // Create a session
-    let (session, token) =
+    let (_, token) =
         Session::create(&state.db, user.id, None, AuthProvider::Password)
             .await?;
 
     // Set session cookie
     let mut cookie = Cookie::new("session", token.as_ref().to_string());
     cookie.set_path("/");
-    cookie.set_http_only(true);
     cookie.set_secure(true);
-    cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
+    cookie.set_same_site(tower_cookies::cookie::SameSite::None);
     cookies.add(cookie);
 
     tracing::info!("User created via password signup: {}", user.email);
@@ -135,16 +141,15 @@ pub async fn password_login(
     }
 
     // Create a session
-    let (session, token) =
+    let (_, token) =
         Session::create(&state.db, user.id, None, AuthProvider::Password)
             .await?;
 
     // Set session cookie
     let mut cookie = Cookie::new("session", token.as_ref().to_string());
     cookie.set_path("/");
-    cookie.set_http_only(true);
     cookie.set_secure(true);
-    cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
+    cookie.set_same_site(tower_cookies::cookie::SameSite::None);
     cookies.add(cookie);
 
     tracing::info!("User logged in via password: {}", user.email);

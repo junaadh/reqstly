@@ -1,10 +1,6 @@
 # Development Caddyfile for Reqstly
-# HTTP only for local development - HTTPS configured for production
-{
-    auto_https off
-}
 
-http://api.localhost {
+https://api.localhost {
     reverse_proxy backend:3000
 
     log {
@@ -13,7 +9,7 @@ http://api.localhost {
     }
 }
 
-http://localhost {
+https://localhost {
     # Health check endpoint for Caddy
     handle /health {
         header {

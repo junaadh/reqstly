@@ -1,16 +1,32 @@
-FROM node:20-bullseye AS development
-
+# Base stage with dependencies
+FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat
 WORKDIR /usr/src/app
 
-# Only copy package files first for install
-COPY package*.json ./
-RUN npm install
+# Dependencies stage
+FROM base AS deps
+COPY package.json package-lock.json* ./
+RUN npm ci
 
-# Copy source into image for dev (optional: mount src only)
+# Development stage - for hot reload
+FROM base AS development
+COPY package.json package-lock.json* ./
+RUN npm ci
 COPY . .
-
-# Expose port
 EXPOSE 5173
+CMD ["npm", "run", "dev"]
 
-# Run Vite directly from image
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Build stage
+FROM base AS builder
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+# Production stage
+FROM base AS production
+ENV NODE_ENV=production
+COPY --from=builder /usr/src/app/dist ./dist
+COPY package.json ./
+RUN npm add -g serve
+EXPOSE 5173
+CMD ["serve", "-s", "dist", "-l", "5173"]

@@ -9,7 +9,7 @@ mod models;
 use axum::{
     Json, Router,
     extract::State,
-    http::StatusCode,
+    http::{HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -19,7 +19,10 @@ use redis::Commands;
 use serde_json::json;
 use std::net::SocketAddr;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use webauthn_rs::{Webauthn, WebauthnBuilder};
 
@@ -144,7 +147,21 @@ async fn main() {
         .nest("/requests", create_request_routes())
         // Middleware
         .layer(CookieManagerLayer::new())
-        .layer(CorsLayer::permissive())
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::AllowOrigin::list([
+                    "http://localhost".parse().unwrap(),
+                ]))
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::OPTIONS,
+                ])
+                .allow_headers([header::CONTENT_TYPE])
+                .allow_credentials(true),
+        )
         .layer(TraceLayer::new_for_http())
         // State
         .with_state(state);

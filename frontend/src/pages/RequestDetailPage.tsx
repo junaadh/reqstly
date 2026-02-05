@@ -1,149 +1,198 @@
-import { useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api'
-import { StatusBadge } from '@/components/requests/StatusBadge'
-import { PriorityBadge } from '@/components/requests/PriorityBadge'
-import { CategoryBadge } from '@/components/requests/CategoryBadge'
-import { AuditTimeline } from '@/components/requests/AuditTimeline'
-import { ArrowLeft, Edit, Trash2 } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatDistanceToNow } from 'date-fns'
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { requestsApi, ApiError } from '../api/client';
+import type { Request, AuditLog, UpdateRequestInput, RequestStatus } from '../types';
 
 export function RequestDetailPage() {
-  const { id } = useParams<{ id: string }>()
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [request, setRequest] = useState<Request | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const { data: request, isLoading } = useQuery({
-    queryKey: ['request', id],
-    queryFn: () => api.get(id!),
-    enabled: !!id,
-  })
+  useEffect(() => {
+    async function loadRequest() {
+      if (!id) return;
 
-  const { data: auditLogs } = useQuery({
-    queryKey: ['audit', id],
-    queryFn: () => api.getAuditLog(id!),
-    enabled: !!id,
-  })
+      try {
+        const [requestData, logsData] = await Promise.all([
+          requestsApi.get(id),
+          requestsApi.getAuditLog(id),
+        ]);
+        setRequest(requestData);
+        setAuditLogs(logsData);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          setError('Request not found');
+        } else {
+          setError('Failed to load request');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadRequest();
+  }, [id]);
+
+  const handleUpdateStatus = async (newStatus: RequestStatus) => {
+    if (!request || isUpdating) return;
+
+    setIsUpdating(true);
+    setError(null);
+
+    try {
+      const updateData: UpdateRequestInput = { status: newStatus };
+      const updated = await requestsApi.update(request.id, updateData);
+      setRequest(updated);
+
+      // Reload audit logs
+      const logs = await requestsApi.getAuditLog(request.id);
+      setAuditLogs(logs);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update status');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!request || !confirm('Are you sure you want to delete this request?')) {
+      return;
+    }
+
+    try {
+      await requestsApi.delete(request.id);
+      navigate('/requests');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete request');
+    }
+  };
 
   if (isLoading) {
     return (
-      <div className="p-8">
-        <div className="animate-pulse">
-          <div className="h-8 w-48 bg-muted rounded mb-4"></div>
-          <div className="h-4 w-96 bg-muted rounded"></div>
-        </div>
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
-    )
+    );
   }
 
   if (!request) {
     return (
-      <div className="p-8">
-        <p className="text-muted-foreground">Request not found</p>
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+        {error || 'Request not found'}
       </div>
-    )
+    );
   }
 
   return (
-    <div className="p-8 animate-fade-in">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="mb-8">
-        <Link
-          to="/requests"
-          className="mb-4 inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to requests
-        </Link>
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h1 className="font-display text-3xl font-bold tracking-tight">
-              {request.title}
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Created {formatDistanceToNow(new Date(request.created_at), { addSuffix: true })}
-              {' • '}
-              Updated {formatDistanceToNow(new Date(request.updated_at), { addSuffix: true })}
-            </p>
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-2xl font-bold text-gray-900">{request.title}</h1>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                request.status === 'open'
+                  ? 'bg-yellow-100 text-yellow-800'
+                  : request.status === 'in_progress'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-green-100 text-green-800'
+              }`}
+            >
+              {request.status.replace('_', ' ')}
+            </span>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-            <Button variant="outline" size="sm" className="text-destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </Button>
-          </div>
+          <p className="text-gray-600">
+            {request.category} • {request.priority} priority • Created on {new Date(request.created_at).toLocaleDateString()}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link
+            to={`/requests/${request.id}/edit`}
+            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Edit
+          </Link>
+          <button
+            onClick={handleDelete}
+            className="px-4 py-2 border border-red-300 rounded-md text-sm font-medium text-red-700 hover:bg-red-50"
+          >
+            Delete
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Request Details */}
-          <Card className="animate-slide-up">
-            <CardHeader>
-              <CardTitle>Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground mb-2">Description</h3>
-                <p className="text-sm whitespace-pre-wrap">
-                  {request.description || 'No description provided'}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground mb-2">Category</h3>
-                  <CategoryBadge category={request.category} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground mb-2">Status</h3>
-                  <StatusBadge status={request.status} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground mb-2">Priority</h3>
-                  <PriorityBadge priority={request.priority} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Audit Timeline */}
-          {auditLogs && auditLogs.length > 0 && (
-            <Card className="animate-slide-up">
-              <CardHeader>
-                <CardTitle>Activity History</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <AuditTimeline logs={auditLogs} />
-              </CardContent>
-            </Card>
-          )}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+          {error}
         </div>
+      )}
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <Card className="animate-slide-up">
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
-                Change Status
-              </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Update Priority
-              </Button>
-            </CardContent>
-          </Card>
+      {/* Request Details */}
+      <div className="bg-white shadow-sm rounded-lg border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Description</h2>
+        <p className="text-gray-700 whitespace-pre-wrap">
+          {request.description || 'No description provided'}
+        </p>
+      </div>
+
+      {/* Status Update */}
+      <div className="bg-white shadow-sm rounded-lg border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Update Status</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleUpdateStatus('open')}
+            disabled={isUpdating || request.status === 'open'}
+            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-yellow-50 disabled:opacity-50"
+          >
+            Open
+          </button>
+          <button
+            onClick={() => handleUpdateStatus('in_progress')}
+            disabled={isUpdating || request.status === 'in_progress'}
+            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-blue-50 disabled:opacity-50"
+          >
+            In Progress
+          </button>
+          <button
+            onClick={() => handleUpdateStatus('resolved')}
+            disabled={isUpdating || request.status === 'resolved'}
+            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-green-50 disabled:opacity-50"
+          >
+            Resolved
+          </button>
         </div>
+      </div>
+
+      {/* Audit Log */}
+      <div className="bg-white shadow-sm rounded-lg border border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Activity History</h2>
+        </div>
+        {auditLogs.length === 0 ? (
+          <div className="p-6 text-center text-gray-500">No activity yet</div>
+        ) : (
+          <div className="divide-y divide-gray-200">
+            {auditLogs.map((log) => (
+              <div key={log.id} className="px-6 py-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 capitalize">
+                      {log.action.replace('_', ' ')}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(log.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  )
+  );
 }

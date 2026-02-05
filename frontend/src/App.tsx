@@ -1,80 +1,84 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AppLayout, AuthLayout } from './components/layouts';
+import {
+  LoginPage,
+  DashboardPage,
+  RequestsListPage,
+  CreateRequestPage,
+  RequestDetailPage,
+  ProfilePage,
+} from './pages';
 
-// Layout
-import { AppLayout } from './components/layout/AppLayout'
-import { AuthLayout } from './components/layout/AuthLayout'
+// Protected Route wrapper
+function ProtectedRoute({ children }: { children: React.ReactElement }) {
+  const { isAuthenticated, isLoading } = useAuth();
 
-// Pages
-import { LoginPage } from './pages/LoginPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { RequestsListPage } from './pages/RequestsListPage'
-import { RequestDetailPage } from './pages/RequestDetailPage'
-import { CreateRequestPage } from './pages/CreateRequestPage'
-import { ProfilePage } from './pages/ProfilePage'
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-})
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
-    )
+    );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
   }
 
-  return <>{children}</>
+  return children;
+}
+
+// Public Route (accessible to everyone, doesn't redirect if authenticated)
+function PublicRoute({ children }: { children: React.ReactElement }) {
+  return <>{children}</>;
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <AuthLayout>
+              <LoginPage />
+            </AuthLayout>
+          </PublicRoute>
+        }
+      />
+
+      {/* Protected routes */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<DashboardPage />} />
+        <Route path="requests" element={<RequestsListPage />} />
+        <Route path="requests/new" element={<CreateRequestPage />} />
+        <Route path="requests/:id" element={<RequestDetailPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+      </Route>
+
+      {/* Catch all - redirect to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            {/* Auth Routes */}
-            <Route element={<AuthLayout />}>
-              <Route path="/login" element={<LoginPage />} />
-            </Route>
-
-            {/* Protected Routes */}
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AppLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/requests" element={<RequestsListPage />} />
-              <Route path="/requests/new" element={<CreateRequestPage />} />
-              <Route path="/requests/:id" element={<RequestDetailPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-            </Route>
-
-            {/* Catch all - redirect to dashboard */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
-  )
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
+  );
 }
 
-export default App
+export default App;

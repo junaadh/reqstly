@@ -1,137 +1,144 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api'
-import { StatusBadge } from '@/components/requests/StatusBadge'
-import { PriorityBadge } from '@/components/requests/PriorityBadge'
-import { CategoryBadge } from '@/components/requests/CategoryBadge'
-import { Plus, Search } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { formatDistanceToNow } from 'date-fns'
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { requestsApi } from '../api/client';
+import type { Request, RequestStatus, RequestCategory } from '../types';
 
 export function RequestsListPage() {
-  const [filters, setFilters] = useState({
-    status: '',
-    category: '',
-    search: '',
-  })
+  const [requests, setRequests] = useState<Request[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<RequestCategory | 'all'>('all');
 
-  const { data: requests, isLoading } = useQuery({
-    queryKey: ['requests', filters.status, filters.category],
-    queryFn: () => api.list({
-      status: filters.status || undefined,
-      category: filters.category || undefined,
-    }),
-  })
+  useEffect(() => {
+    async function loadRequests() {
+      try {
+        const filters: any = {};
+        if (statusFilter !== 'all') filters.status = statusFilter;
+        if (categoryFilter !== 'all') filters.category = categoryFilter;
 
-  const filteredRequests = requests?.filter(request =>
-    request.title.toLowerCase().includes(filters.search.toLowerCase()) ||
-    request.description?.toLowerCase().includes(filters.search.toLowerCase())
-  ) || []
+        const data = await requestsApi.list(filters);
+        setRequests(data);
+      } catch (error) {
+        console.error('Failed to load requests:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadRequests();
+  }, [statusFilter, categoryFilter]);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 animate-fade-in">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">
-            Requests
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            Manage and track all your requests
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">My Requests</h1>
+          <p className="text-gray-600">Manage your requests</p>
         </div>
-        <Link to="/requests/new">
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Request
-          </Button>
+        <Link
+          to="/requests/new"
+          className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-md text-sm font-medium"
+        >
+          New Request
         </Link>
       </div>
 
       {/* Filters */}
-      <div className="mb-6 flex gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search requests..."
-            value={filters.search}
-            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-            className="pl-9"
-          />
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            >
+              <option value="all">All Status</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Category
+            </label>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as any)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            >
+              <option value="all">All Categories</option>
+              <option value="IT">IT</option>
+              <option value="Ops">Ops</option>
+              <option value="Admin">Admin</option>
+              <option value="HR">HR</option>
+            </select>
+          </div>
         </div>
-        <select
-          value={filters.status}
-          onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="">All Status</option>
-          <option value="open">Open</option>
-          <option value="in_progress">In Progress</option>
-          <option value="resolved">Resolved</option>
-        </select>
-        <select
-          value={filters.category}
-          onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="">All Categories</option>
-          <option value="IT">IT</option>
-          <option value="Ops">Ops</option>
-          <option value="Admin">Admin</option>
-          <option value="HR">HR</option>
-        </select>
       </div>
 
       {/* Requests List */}
-      {isLoading ? (
-        <div className="py-12 text-center text-muted-foreground">
-          Loading requests...
-        </div>
-      ) : filteredRequests.length === 0 ? (
-        <div className="py-12 text-center">
-          <p className="text-muted-foreground mb-4">No requests found</p>
+      {requests.length === 0 ? (
+        <div className="bg-white p-12 rounded-lg shadow-sm border border-gray-200 text-center">
+          <p className="text-gray-500">No requests found</p>
           <Link
             to="/requests/new"
-            className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+            className="inline-block mt-4 text-blue-600 hover:text-blue-700"
           >
-            <Plus className="h-4 w-4" />
-            Create your first request
+            Create your first request →
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredRequests.map((request) => (
+        <div className="bg-white shadow-sm rounded-lg border border-gray-200 divide-y divide-gray-200">
+          {requests.map((request) => (
             <Link
               key={request.id}
               to={`/requests/${request.id}`}
-              className="block rounded-lg border bg-card p-6 transition-all hover:shadow-md animate-slide-up"
+              className="block px-6 py-4 hover:bg-gray-50"
             >
-              <div className="flex items-start justify-between">
+              <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold">{request.title}</h3>
-                  <p className="mt-1 text-muted-foreground line-clamp-2">
-                    {request.description || 'No description provided'}
+                  <h3 className="text-sm font-medium text-gray-900">
+                    {request.title}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {request.description || 'No description'}
                   </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <CategoryBadge category={request.category} />
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(request.created_at), {
-                        addSuffix: true,
-                      })}
-                    </span>
+                  <div className="flex gap-4 mt-2 text-xs text-gray-500">
+                    <span>{request.category}</span>
+                    <span>•</span>
+                    <span className="capitalize">{request.priority} priority</span>
+                    <span>•</span>
+                    <span>{new Date(request.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
-                <div className="ml-6 flex gap-2">
-                  <StatusBadge status={request.status} />
-                  <PriorityBadge priority={request.priority} />
-                </div>
+                <span
+                  className={`ml-4 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    request.status === 'open'
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : request.status === 'in_progress'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-green-100 text-green-800'
+                  }`}
+                >
+                  {request.status.replace('_', ' ')}
+                </span>
               </div>
             </Link>
           ))}
         </div>
       )}
     </div>
-  )
+  );
 }

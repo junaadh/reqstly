@@ -1,0 +1,17 @@
+services:
+  frontend:
+    build:
+      context: .
+      target: development
+    container_name: reqstly-frontend-dev
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/usr/src/app
+      - frontend-node-modules:/usr/src/app/node_modules
+    command: npm run dev
+
+volumes:
+  frontend-node-modules:

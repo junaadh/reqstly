@@ -1,149 +1,131 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
-import { api } from '@/lib/api'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { requestsApi } from '../api/client';
+import type { CreateRequestInput, RequestCategory, RequestPriority } from '../types';
 
 export function CreateRequestPage() {
-  const navigate = useNavigate()
-  const [formData, setFormData] = useState({
+  const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [formData, setFormData] = useState<CreateRequestInput>({
     title: '',
     description: '',
-    category: 'IT' as 'IT' | 'Ops' | 'Admin' | 'HR',
-    priority: 'medium' as 'low' | 'medium' | 'high',
-  })
+    category: 'IT',
+    priority: 'medium',
+  });
 
-  const createMutation = useMutation({
-    mutationFn: api.create,
-    onSuccess: (data) => {
-      toast.success('Request created successfully')
-      navigate(`/requests/${data.id}`)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message)
-    },
-  })
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!formData.title.trim()) {
-      toast.error('Please enter a title')
-      return
+    try {
+      const request = await requestsApi.create(formData);
+      navigate(`/requests/${request.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create request');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    createMutation.mutate(formData)
-  }
+  };
 
   return (
-    <div className="p-8 animate-fade-in">
-      {/* Header */}
-      <div className="mb-8">
-        <Link
-          to="/requests"
-          className="mb-4 inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to requests
-        </Link>
-        <h1 className="font-display text-3xl font-bold tracking-tight">
-          Create Request
-        </h1>
-        <p className="mt-2 text-muted-foreground">
-          Submit a new request to your team
-        </p>
+    <div className="max-w-2xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Create New Request</h1>
+        <p className="text-gray-600">Fill in the details to submit a new request</p>
       </div>
 
-      <Card className="max-w-2xl animate-slide-up">
-        <CardHeader>
-          <CardTitle>Request Details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Title */}
-            <div className="space-y-2">
-              <Label htmlFor="title">Title *</Label>
-              <Input
-                id="title"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="Brief summary of your request"
-                required
-              />
-            </div>
+      <form onSubmit={handleSubmit} className="bg-white shadow-sm rounded-lg border border-gray-200 p-6 space-y-6">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+            {error}
+          </div>
+        )}
 
-            {/* Category */}
-            <div className="space-y-2">
-              <Label htmlFor="category">Category *</Label>
-              <select
-                id="category"
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                required
-              >
-                <option value="IT">IT Support</option>
-                <option value="Ops">Operations</option>
-                <option value="Admin">Administration</option>
-                <option value="HR">Human Resources</option>
-              </select>
-            </div>
+        {/* Title */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Title *
+          </label>
+          <input
+            type="text"
+            required
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Brief title for your request"
+          />
+        </div>
 
-            {/* Priority */}
-            <div className="space-y-2">
-              <Label htmlFor="priority">Priority *</Label>
-              <select
-                id="priority"
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                required
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
+        {/* Description */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Description
+          </label>
+          <textarea
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            rows={4}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Detailed description of your request"
+          />
+        </div>
 
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Provide detailed information about your request..."
-                rows={6}
-              />
-            </div>
+        {/* Category */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Category *
+          </label>
+          <select
+            required
+            value={formData.category}
+            onChange={(e) => setFormData({ ...formData, category: e.target.value as RequestCategory })}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="IT">IT</option>
+            <option value="Ops">Ops</option>
+            <option value="Admin">Admin</option>
+            <option value="HR">HR</option>
+          </select>
+        </div>
 
-            {/* Actions */}
-            <div className="flex gap-3 pt-4">
-              <Button
-                type="submit"
-                disabled={createMutation.isPending}
-                className="flex-1"
-              >
-                {createMutation.isPending ? 'Creating...' : 'Create Request'}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate('/requests')}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        {/* Priority */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Priority *
+          </label>
+          <select
+            required
+            value={formData.priority}
+            onChange={(e) => setFormData({ ...formData, priority: e.target.value as RequestPriority })}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:bg-blue-400"
+          >
+            {isSubmitting ? 'Creating...' : 'Create Request'}
+          </button>
+        </div>
+      </form>
     </div>
-  )
+  );
 }
