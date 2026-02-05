@@ -15,6 +15,7 @@ use crate::{
 pub enum AuthProvider {
     AzureAd,
     Passkey,
+    Password,
 }
 
 impl From<String> for AuthProvider {
@@ -22,6 +23,7 @@ impl From<String> for AuthProvider {
         match value.to_lowercase().as_str() {
             "azure_ad" => Self::AzureAd,
             "passkey" => Self::Passkey,
+            "password" => Self::Password,
             _ => panic!("Invalid auth provider: {value}"),
         }
     }
@@ -38,6 +40,7 @@ impl std::fmt::Display for AuthProvider {
         match self {
             Self::AzureAd => write!(f, "azure_ad"),
             Self::Passkey => write!(f, "passkey"),
+            Self::Password => write!(f, "password"),
         }
     }
 }

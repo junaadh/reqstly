@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod handlers;
 mod metrics;
 mod models;
 
@@ -20,12 +21,15 @@ use std::net::SocketAddr;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use webauthn_rs::{Webauthn, WebauthnBuilder};
 
 use crate::{
-    auth::azure::{AzureOidc, azure_callback, azure_login},
     auth::auth_context::AuthContext,
+    auth::azure::{AzureOidc, azure_callback, azure_login},
+    auth::password::create_password_routes,
     auth::session_token::SessionToken,
     error::AppError,
+    handlers::requests::create_request_routes,
     models::Session,
 };
 
@@ -36,6 +40,7 @@ pub struct AppState {
     pub azure: AzureAd,
     pub passkey: Passkey,
     pub azure_client: Option<AzureOidc>,
+    pub webauthn: Webauthn,
 }
 
 #[tokio::main]
@@ -98,12 +103,23 @@ async fn main() {
         )
     };
 
+    let rp_origin = webauthn_rs::prelude::Url::parse(&passkey_config.origin)
+        .expect("Invalid passkey origin");
+    let webauthn_builder =
+        WebauthnBuilder::new(&passkey_config.rp_id, &rp_origin)
+            .expect("Invalid passkey configuration");
+    let webauthn_builder = webauthn_builder.rp_name("Reqstly Passkey");
+    let webauthn = webauthn_builder
+        .build()
+        .expect("Failed to build passkey client");
+
     let state = AppState {
         db: pool.clone(),
         azure: azure_config,
         passkey: passkey_config,
         redis: redis_client,
         azure_client,
+        webauthn,
     };
 
     let auth_routes = Router::new()
@@ -114,14 +130,18 @@ async fn main() {
         // .route("/passkey/register/start", post(passkey_register_start))
         // .route("/passkey/register/finish", post(passkey_register_finish))
         .route("/logout", post(logout))
-        .route("/me", get(me));
+        .route("/me", get(me))
+        .nest("/password", create_password_routes());
 
     // Build our application with routes
     let app = Router::new()
         // Health and metrics (public)
         .route("/health", get(health_check))
         .route("/metrics", get(metrics))
+        // Auth routes
         .nest("/auth", auth_routes)
+        // Request routes (authenticated)
+        .nest("/requests", create_request_routes())
         // Middleware
         .layer(CookieManagerLayer::new())
         .layer(CorsLayer::permissive())

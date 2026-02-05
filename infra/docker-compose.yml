@@ -56,11 +56,11 @@ services:
       AZURE_AD__TENANT_ID: ${AZURE_AD_TENANT_ID:-}
       AZURE_AD__CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET:-}
       PASSKEY__RP_ID: ${RP_ID:-localhost}
-      PASSKEY__ORIGIN: ${ORIGIN:-http://localhost:5173}
+      PASSKEY__ORIGIN: ${ORIGIN:-http://localhost:80}
       SERVER__PORT: 3000
       SERVER__BASE_URL: ${SERVER_BASE_URL:-http://api.localhost}
-    env_file:
-      - ../.env.local
+    # env_file:
+      # - ../.env.local
     networks:
       - reqstly-public
       - reqstly-internal
@@ -110,17 +110,20 @@ services:
       - reqstly-public
     depends_on:
       - backend
-    mem_limit: 256m
-    cpus: 0.25
+    ports:
+      - "5173:5173"
+    mem_limit: 8g
+    cpus: 2
     volumes:
-      - ../frontend:/app
-      - /app/node_modules
+      - ../frontend/src:/usr/src/app/src
+      - ../frontend/public:/usr/src/app/public
+      - frontend-node-modules:/usr/src/app/node_modules
 
   prometheus:
     image: prom/prometheus:v2.55.1
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.path=/tmp/prometheus'
       - '--storage.tsdb.retention.time=15d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
@@ -128,10 +131,10 @@ services:
       - reqstly-monitoring
     depends_on:
       - backend
-    mem_limit: 1g
-    cpus: 0.5
+    mem_limit: 2g
+    cpus: 1
     tmpfs:
-      - /prometheus
+      - /tmp/prometheus
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
@@ -162,7 +165,7 @@ services:
     mem_limit: 1g
     cpus: 0.5
     tmpfs:
-      - /loki
+      - /tmp/loki
     volumes:
       - ./observability/loki/loki.yml:/etc/loki/local-config.yaml:ro
 
@@ -206,3 +209,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  frontend-node-modules:

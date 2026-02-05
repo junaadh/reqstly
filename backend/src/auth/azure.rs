@@ -207,45 +207,39 @@ pub async fn azure_callback(
 
     let provider = AuthProvider::AzureAd;
 
-    let (user, identity) =
-        match ExternalIdentity::find_by_provider_subject(
-            &state.db,
-            provider,
-            &subject,
-        )
-        .await?
-        {
-            Some(identity) => {
-                let user = User::find_by_id(&state.db, identity.user_id)
-                    .await?
-                    .ok_or_else(|| {
-                        AppError::Internal(
-                            "External identity found but user missing"
-                                .to_string(),
-                        )
-                    })?;
-                (user, Some(identity))
-            }
-            None => {
-                let user = ExternalIdentity::resolve_user_from_external_identity(
-                    &state.db,
-                    provider,
-                    &subject,
-                    email.as_deref(),
-                    name.as_deref(),
-                )
-                .await?;
+    let (user, identity) = match ExternalIdentity::find_by_provider_subject(
+        &state.db, provider, &subject,
+    )
+    .await?
+    {
+        Some(identity) => {
+            let user = User::find_by_id(&state.db, identity.user_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal(
+                        "External identity found but user missing".to_string(),
+                    )
+                })?;
+            (user, Some(identity))
+        }
+        None => {
+            let user = ExternalIdentity::resolve_user_from_external_identity(
+                &state.db,
+                provider,
+                &subject,
+                email.as_deref(),
+                name.as_deref(),
+            )
+            .await?;
 
-                let identity = ExternalIdentity::find_by_provider_subject(
-                    &state.db,
-                    provider,
-                    &subject,
-                )
-                .await?;
+            let identity = ExternalIdentity::find_by_provider_subject(
+                &state.db, provider, &subject,
+            )
+            .await?;
 
-                (user, identity)
-            }
-        };
+            (user, identity)
+        }
+    };
 
     let identity = identity.ok_or_else(|| {
         AppError::Internal("External identity not created".to_string())

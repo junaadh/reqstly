@@ -1,19 +1,24 @@
+auth_enabled: false
+
 server:
   http_listen_port: 3100
   grpc_listen_port: 9080
 
 common:
+  path_prefix: /tmp/loki
+  replication_factor: 1
   ring:
-    instance_addr: 127.0.0.1
     kvstore:
       store: inmemory
-  replication_factor: 1
-  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
 
 schema_config:
   configs:
     - from: 2024-01-01
-      store: boltdb-shipper
+      store: tsdb
       object_store: filesystem
       schema: v13
       index:
@@ -21,44 +26,26 @@ schema_config:
         period: 24h
 
 storage_config:
-  boltdb_shipper:
-    active_index_directory: /loki/boltdb-shipper-active
-    cache_location: /loki/boltdb-shipper-cache
-    shared_store: filesystem
+  tsdb_shipper:
+    active_index_directory: /tmp/loki/tsdb-index
+    cache_location: /tmp/loki/tsdb-cache
   filesystem:
-    directory: /loki/chunks
+    directory: /tmp/loki/chunks
 
 compactor:
-  working_directory: /loki/boltdb-shipper-compactor
-  shared_store: filesystem
+  working_directory: /tmp/loki/compactor
+  delete_request_store: filesystem
 
 limits_config:
-  enforce_metric_name: false
   reject_old_samples: true
   reject_old_samples_max_age: 168h
-  max_entries_limit_per_query: 10000
-  max_streams_per_user: 0
-  max_global_streams_per_user: 0
-  max_query_series: 1000
-  max_query_parallelism: 32
-
-chunk_store_config:
-  max_look_back_period: 720h
-
-table_manager:
-  retention_deletes_enabled: true
-  retention_period: 720h
 
 ruler:
   storage:
     type: local
     local:
-      directory: /loki/rules
-  rule_path: /loki/rules-temp
-  alertmanager_url: http://localhost:9093
-  ring:
-    kvstore:
-      store: inmemory
+      directory: /tmp/loki/rules
+  rule_path: /tmp/loki/rules-temp
   enable_api: true
 
 analytics:
