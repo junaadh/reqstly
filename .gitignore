@@ -21,6 +21,7 @@ frontend/.env
 frontend/.env.local
 frontend/.env.production
 frontend/bun.lockb
+frontend/core/
 
 # Docker
 *.log
