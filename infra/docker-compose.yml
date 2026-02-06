@@ -213,9 +213,6 @@
 #   redis-data:
 #   frontend-node-modules:
 
-env_file:
-  - ../.env
- 
 networks:
   reqstly-public:
     driver: bridge
