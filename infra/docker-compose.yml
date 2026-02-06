@@ -264,7 +264,7 @@ services:
   backend:
     build:
       context: ../backend
-      target: production
+      target: runtime
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS__URL: redis://redis:6379
@@ -294,7 +294,7 @@ services:
   migrate:
     build:
       context: ../backend
-      target: production
+      target: runtime
     command: >
       sh -c "
         sqlx database create || true &&
