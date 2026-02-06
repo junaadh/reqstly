@@ -12,7 +12,7 @@ Cargo.lock
 
 # Backend
 backend/.cargo/
-backend/.sqlx/
+!backend/.sqlx
 
 # Frontend / Node.js
 **/node_modules/

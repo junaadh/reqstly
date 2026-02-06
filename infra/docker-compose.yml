@@ -239,7 +239,7 @@ services:
     networks:
       - reqstly-internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U reqstly"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -267,6 +267,7 @@ services:
       target: runtime
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE__URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS__URL: redis://redis:6379
       RUST__LOG: info
       JWT__SECRET: ${JWT_SECRET}

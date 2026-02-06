@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE passkey_credentials\n            SET counter = $2\n            WHERE credential_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8847ef95a501d148c51e0620065fc73daf7fee8c72c557626f4382f2594a0fd8"
+}

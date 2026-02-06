@@ -7,7 +7,7 @@ import {
   AuthResponse,
 } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.localhost';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.reqstly.com';
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
