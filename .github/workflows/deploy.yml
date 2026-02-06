@@ -36,12 +36,12 @@ jobs:
           GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.HETZNER_SSH_USER }}@${{ secrets.HETZNER_SSH_HOST }} "
             set -e
 
             # clone repo if missing
             if [ ! -d ~/reqstly ]; then
-              git clone https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git ~/reqstly
+              git clone https://github.com/junaadh/reqstly.git ~/reqstly
             fi
 
             cd ~/reqstly
@@ -49,20 +49,18 @@ jobs:
             git reset --hard origin/master
 
             # write environment variables for docker-compose
-            cat > .env <<EOL
-POSTGRES_USER=$POSTGRES_USER
-POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-POSTGRES_DB=$POSTGRES_DB
-JWT_SECRET=$JWT_SECRET
-AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID
-AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID
-AZURE_AD_CLIENT_SECRET=$AZURE_AD_CLIENT_SECRET
-RP_ID=$RP_ID
-ORIGIN=$ORIGIN
-SERVER_BASE_URL=$SERVER_BASE_URL
-GRAFANA_ADMIN_USER=$GRAFANA_ADMIN_USER
-GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD
-EOL
+            echo \"POSTGRES_USER=$POSTGRES_USER\" > .env
+            echo \"POSTGRES_PASSWORD=$POSTGRES_PASSWORD\" >> .env
+            echo \"POSTGRES_DB=$POSTGRES_DB\" >> .env
+            echo \"JWT_SECRET=$JWT_SECRET\" >> .env
+            echo \"AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID\" >> .env
+            echo \"AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID\" >> .env
+            echo \"AZURE_AD_CLIENT_SECRET=$AZURE_AD_CLIENT_SECRET\" >> .env
+            echo \"RP_ID=$RP_ID\" >> .env
+            echo \"ORIGIN=$ORIGIN\" >> .env
+            echo \"SERVER_BASE_URL=$SERVER_BASE_URL\" >> .env
+            echo \"GRAFANA_ADMIN_USER=$GRAFANA_ADMIN_USER\" >> .env
+            echo \"GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD\" >> .env
 
             # Install Docker if missing
             if ! command -v docker >/dev/null; then
@@ -71,7 +69,7 @@ EOL
 
             # Install Docker Compose if missing
             if ! command -v docker-compose >/dev/null; then
-              sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo curl -L \"https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-\$(uname -s)-\$(uname -m)\" -o /usr/local/bin/docker-compose
               sudo chmod +x /usr/local/bin/docker-compose
             fi
 
@@ -81,4 +79,4 @@ EOL
 
             # Optional: prune unused images to save disk space
             docker system prune -f
-          EOF
+          "
