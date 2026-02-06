@@ -62,17 +62,6 @@ jobs:
             echo \"GRAFANA_ADMIN_USER=$GRAFANA_ADMIN_USER\" >> .env
             echo \"GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD\" >> .env
 
-            # Install Docker if missing
-            if ! command -v docker >/dev/null; then
-              curl -fsSL https://get.docker.com | sh
-            fi
-
-            # Install Docker Compose if missing
-            if ! command -v docker-compose >/dev/null; then
-              sudo curl -L \"https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-\$(uname -s)-\$(uname -m)\" -o /usr/local/bin/docker-compose
-              sudo chmod +x /usr/local/bin/docker-compose
-            fi
-
             # Pull, build, and start the stack
             docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml pull
             docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml up -d --build --remove-orphans
