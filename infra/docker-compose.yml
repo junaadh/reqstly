@@ -229,6 +229,8 @@ volumes:
   postgres-data:
   redis-data:
   prometheus-data:
+  caddy-data:
+  caddy-config:
 
 services:
   postgres:
@@ -395,6 +397,3 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 
-volumes:
-  caddy-data:
-  caddy-config:
