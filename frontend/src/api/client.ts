@@ -4,7 +4,6 @@ import {
   UpdateRequestInput,
   RequestFilters,
   AuditLog,
-  User,
   AuthResponse,
 } from '../types';
 

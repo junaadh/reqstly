@@ -66,6 +66,6 @@ export interface AuthResponse {
   id: string;
   email: string;
   name: string;
-  provider: string;
+  provider: 'azure' | 'passkey';
   federated: boolean;
 }
