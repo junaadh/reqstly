@@ -74,8 +74,8 @@ jobs:
             fi
 
             # Pull, build, and start the stack
-            docker compose -f infra/docker-compose.yml pull
-            docker compose -f infra/docker-compose.yml up -d --build --remove-orphans
+            docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml pull
+            docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml up -d --build --remove-orphans
 
             # Optional: prune unused images to save disk space
             docker system prune -f
