@@ -16,6 +16,7 @@ volumes:
 
 services:
   postgres:
+    container_name: postgres
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -33,6 +34,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   redis:
+    container_name: redis
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     networks:
@@ -47,6 +49,7 @@ services:
       - redis-data:/data
 
   backend:
+    container_name: backend
     build:
       context: ../backend
       target: runtime
@@ -96,6 +99,7 @@ services:
     restart: "no"
 
   frontend:
+    container_name: frontend
     build:
       context: ../frontend
       target: production
@@ -108,6 +112,7 @@ services:
     restart: unless-stopped
 
   prometheus:
+    container_name: prometheus
     image: prom/prometheus:v2.55.1
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -123,6 +128,7 @@ services:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
   grafana:
+    container_name: grafana
     image: grafana/grafana:11.4.0
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
@@ -137,6 +143,7 @@ services:
     restart: unless-stopped
 
   loki:
+    container_name: loki
     image: grafana/loki:3.3.0
     command:
       - '-config.file=/etc/loki/local-config.yaml'
@@ -148,6 +155,7 @@ services:
       - ./observability/loki/loki.yml:/etc/loki/local-config.yaml:ro
 
   promtail:
+    container_name: promtail
     image: grafana/promtail:3.3.0
     command:
       - '-config.file=/etc/promtail/config.yml'
@@ -163,6 +171,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   caddy:
+    container_name: caddy
     image: caddy:2.7-alpine
     ports:
       - "80:80"
