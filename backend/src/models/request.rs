@@ -233,6 +233,23 @@ impl Request {
             }
         }
 
+        // Debug logging to see what values are being sent to the database
+        tracing::debug!(
+            "Creating request with priority: {:?}, as string: {}",
+            request.priority,
+            request.priority
+        );
+        tracing::debug!(
+            "Creating request with category: {:?}, as string: {}",
+            request.category,
+            request.category
+        );
+        tracing::debug!(
+            "Creating request with status: {:?}, as string: {}",
+            RequestStatus::Open,
+            RequestStatus::Open
+        );
+
         sqlx::query_as!(
             Request,
             r#"
@@ -248,9 +265,9 @@ impl Request {
             request.user_id,
             request.title,
             request.description,
-            request.category as RequestCategory,
-            RequestStatus::Open as RequestStatus,
-            request.priority as RequestPriority
+            request.category.to_string(),
+            RequestStatus::Open.to_string(),
+            request.priority.to_string()
         )
         .fetch_one(pool)
         .await
@@ -296,6 +313,16 @@ impl Request {
         }
 
         if let Some(status) = &request.status {
+            // Debug logging for status changes
+            tracing::debug!(
+                "Updating request {} status from {:?} ({}) to {:?} ({})",
+                id,
+                existing.status,
+                existing.status,
+                status,
+                status
+            );
+
             updates.push(format!("status = ${}", param_index));
             param_index += 1;
 
@@ -314,6 +341,16 @@ impl Request {
         }
 
         if let Some(priority) = &request.priority {
+            // Debug logging for priority changes
+            tracing::debug!(
+                "Updating request {} priority from {:?} ({}) to {:?} ({})",
+                id,
+                existing.priority,
+                existing.priority,
+                priority,
+                priority
+            );
+
             updates.push(format!("priority = ${}", param_index));
             param_index += 1;
 
@@ -358,10 +395,10 @@ impl Request {
             query_builder = query_builder.bind(description);
         }
         if let Some(status) = &request.status {
-            query_builder = query_builder.bind(status);
+            query_builder = query_builder.bind(status.to_string());
         }
         if let Some(priority) = &request.priority {
-            query_builder = query_builder.bind(priority);
+            query_builder = query_builder.bind(priority.to_string());
         }
 
         // Bind updated_at timestamp
