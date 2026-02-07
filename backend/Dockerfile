@@ -38,7 +38,7 @@ WORKDIR /app
 ENV SQLX_OFFLINE=true
 
 # Run dev server
-CMD ["cargo", "run"]
+CMD ["sh", "-c", "sqlx migrate run && cargo run"]
 
 # ---------- Runtime (Production) ----------
 FROM rust:slim AS runtime
@@ -59,9 +59,9 @@ WORKDIR /app
 COPY . .
 
 # Use offline metadata if present (.sqlx/) to avoid build-time DB dependency
-ENV SQLX_OFFLINE=true
+ENV SQLX_OFFLINE=false
 
 RUN cargo build --release
 
 # Build and run in release mode
-CMD ["sh", "-c", "cargo run --release"]
+CMD ["sh", "-c", "sqlx migrate run && cargo run --release"]
