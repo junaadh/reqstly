@@ -1,15 +1,15 @@
 // Domain types matching backend models
 
-export type RequestStatus = 'open' | 'in_progress' | 'resolved';
-export type RequestCategory = 'IT' | 'Ops' | 'Admin' | 'HR';
-export type RequestPriority = 'low' | 'medium' | 'high';
-export type AuditAction = 'created' | 'updated' | 'deleted' | 'status_changed';
+export type RequestStatus = "open" | "in_progress" | "resolved";
+export type RequestCategory = "IT" | "Ops" | "Admin" | "HR";
+export type RequestPriority = "low" | "medium" | "high";
+export type AuditAction = "created" | "updated" | "deleted" | "status_changed";
 
 export interface User {
   id: string;
   email: string;
   name: string;
-  provider: 'azure' | 'passkey';
+  provider: "azure" | "passkey";
   federated: boolean;
 }
 
@@ -66,6 +66,6 @@ export interface AuthResponse {
   id: string;
   email: string;
   name: string;
-  provider: 'azure' | 'passkey';
+  provider: "azure" | "passkey";
   federated: boolean;
 }

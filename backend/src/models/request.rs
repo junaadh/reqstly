@@ -48,7 +48,6 @@ impl std::fmt::Display for RequestStatus {
 /// Request category enum
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
 #[sqlx(type_name = "varchar")]
-#[serde(rename_all = "UPPERCASE")]
 pub enum RequestCategory {
     IT,
     Ops,
@@ -62,8 +61,8 @@ impl FromStr for RequestCategory {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "IT" => Ok(RequestCategory::IT),
-            "OPS" => Ok(RequestCategory::Ops),
-            "ADMIN" => Ok(RequestCategory::Admin),
+            "Ops" => Ok(RequestCategory::Ops),
+            "Admin" => Ok(RequestCategory::Admin),
             "HR" => Ok(RequestCategory::HR),
             _ => Err(format!("Invalid request category: {}", s)),
         }
@@ -74,8 +73,8 @@ impl std::fmt::Display for RequestCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RequestCategory::IT => write!(f, "IT"),
-            RequestCategory::Ops => write!(f, "OPS"),
-            RequestCategory::Admin => write!(f, "ADMIN"),
+            RequestCategory::Ops => write!(f, "Ops"),
+            RequestCategory::Admin => write!(f, "Admin"),
             RequestCategory::HR => write!(f, "HR"),
         }
     }
