@@ -53,6 +53,8 @@ RUN apt-get update && apt-get install -y \
     libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN cargo install sqlx-cli --no-default-features --features postgres
+
 WORKDIR /app
 
 # Copy project source
@@ -63,5 +65,7 @@ ENV SQLX_OFFLINE=false
 
 RUN cargo build --release
 
+RUN sqlx migrate run 
+
 # Build and run in release mode
-CMD ["sh", "-c", "sqlx migrate run && cargo run --release"]
+CMD ["cargo", "run", "--release"]
