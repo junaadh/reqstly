@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { requestsApi, ApiError } from '../api/client';
 import type { Request, AuditLog, UpdateRequestInput, RequestStatus } from '../types';
 import { toast } from 'sonner';
