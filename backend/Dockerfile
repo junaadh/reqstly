@@ -22,15 +22,9 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release || true
 RUN rm -rf src
 
-# Install sqlx CLI for migrations (used by dev + migrate service)
-RUN cargo install sqlx-cli --no-default-features --features postgres
-
 # ---------- Development ----------
 FROM base AS development
 
-# Copy sqlx CLI from deps
-COPY --from=deps /usr/local/cargo/bin/sqlx /usr/local/cargo/bin/sqlx
-COPY --from=deps /usr/local/cargo/bin/cargo-sqlx /usr/local/cargo/bin/cargo-sqlx
 COPY . .
 
 WORKDIR /app
@@ -38,7 +32,7 @@ WORKDIR /app
 ENV SQLX_OFFLINE=true
 
 # Run dev server
-CMD ["sh", "-c", "sqlx migrate run && cargo run"]
+CMD ["cargo", "run"]
 
 # ---------- Runtime (Production) ----------
 FROM rust:slim AS runtime
@@ -53,19 +47,15 @@ RUN apt-get update && apt-get install -y \
     libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cargo install sqlx-cli --no-default-features --features postgres
-
 WORKDIR /app
 
 # Copy project source
 COPY . .
 
 # Use offline metadata if present (.sqlx/) to avoid build-time DB dependency
-ENV SQLX_OFFLINE=false
+ENV SQLX_OFFLINE=true
 
 RUN cargo build --release
-
-RUN sqlx migrate run 
 
 # Build and run in release mode
 CMD ["cargo", "run", "--release"]

@@ -81,16 +81,26 @@ services:
     restart: unless-stopped
 
   migrate:
-    build:
-      context: ../backend
-      target: runtime
+    container_name: migrate
+    image: nxyt/sqlx-cli:v0.70
+    volumes:
+      - ./migrations:/migrations       # Mount your migrations folder
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     command: >
       sh -c "
-        sqlx database create || true &&
+        # Wait until Postgres is healthy
+        until pg_isready -h postgres -U ${POSTGRES_USER}; do
+          echo 'Waiting for Postgres...'
+          sleep 2
+        done
+
+        # Create DB if it doesn't exist
+        sqlx database create || echo 'DB already exists'
+
+        # Run migrations
         sqlx migrate run
       "
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
       postgres:
         condition: service_healthy
