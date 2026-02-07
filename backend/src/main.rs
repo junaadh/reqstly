@@ -150,7 +150,7 @@ async fn main() {
         .layer(
             CorsLayer::new()
                 .allow_origin(tower_http::cors::AllowOrigin::list([
-                    "http://localhost".parse().unwrap(),
+                    "https://reqstly.com".parse().unwrap(),
                 ]))
                 .allow_methods([
                     Method::GET,
