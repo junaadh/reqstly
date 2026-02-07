@@ -71,6 +71,9 @@ async fn main() {
     let pool = db::create_pool(&settings.database.url)
         .await
         .expect("Failed to create database pool");
+    db::run_migrations(&pool)
+        .await
+        .expect("Failed to run database migrations");
 
     let redis_client = redis::Client::open(settings.redis.url.as_str())
         .expect("Failed to create redis client");

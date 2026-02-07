@@ -8,10 +8,12 @@ use uuid::Uuid;
 
 /// Request status enum
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
 pub enum RequestStatus {
+    #[serde(rename = "open")]
     Open,
+    #[serde(rename = "in_progress", alias = "inprogress")]
     InProgress,
+    #[serde(rename = "resolved")]
     Resolved,
 }
 
