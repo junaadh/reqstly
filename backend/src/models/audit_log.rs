@@ -23,7 +23,7 @@ impl From<String> for AuditAction {
 impl From<&str> for AuditAction {
     fn from(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "ceated" => Self::Created,
+            "created" => Self::Created,
             "updated" => Self::Updated,
             "deleted" => Self::Deleted,
             "status_changed" => Self::StatusChanged,

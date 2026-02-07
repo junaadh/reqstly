@@ -79,7 +79,7 @@ export function RequestDetailPage() {
       <div className="flex justify-center items-center h-64">
         <div className="relative">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-slate-200"></div>
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500 border-t-transparent absolute top-0"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-teal-500 border-t-transparent absolute top-0"></div>
         </div>
       </div>
     );
@@ -89,11 +89,6 @@ export function RequestDetailPage() {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-center">
-          <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M12 12h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
           <p className="text-slate-500">Request not found</p>
         </div>
       </div>
@@ -106,36 +101,31 @@ export function RequestDetailPage() {
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-3">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-display font-semibold text-slate-900">
               {request.title}
             </h1>
             <span
               className={`inline-flex items-center px-4 py-1.5 rounded-full text-sm font-semibold ${
                 request.status === 'open'
-                  ? 'bg-amber-100 text-amber-700'
+                  ? 'bg-amber-100/70 text-amber-700'
                   : request.status === 'in_progress'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-emerald-100 text-emerald-700'
+                  ? 'bg-sky-100/70 text-sky-700'
+                  : 'bg-emerald-100/70 text-emerald-700'
               }`}
             >
               {request.status.replace('_', ' ')}
             </span>
           </div>
           <div className="flex items-center gap-4 text-sm text-slate-500">
-            <span className="px-3 py-1 bg-slate-100 rounded-lg font-medium">{request.category}</span>
+            <span className="tag-pill">{request.category}</span>
             <span className="capitalize">{request.priority} priority</span>
-            <span className="flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {new Date(request.created_at).toLocaleDateString()}
-            </span>
+            <span>{new Date(request.created_at).toLocaleDateString()}</span>
           </div>
         </div>
         <div className="flex gap-2">
           <button
             onClick={handleDelete}
-            className="px-4 py-2 border-2 border-rose-200 rounded-xl text-sm font-semibold text-rose-700 hover:bg-rose-50 hover:border-rose-300 transition-all"
+            className="px-4 py-2 border border-rose-200/70 rounded-xl text-sm font-semibold text-rose-700 hover:bg-rose-50/70 hover:border-rose-300/70 transition-all"
           >
             Delete
           </button>
@@ -143,11 +133,8 @@ export function RequestDetailPage() {
       </div>
 
       {/* Request Details */}
-      <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-slate-200/50 shadow-xl shadow-slate-200/50 p-8">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+      <div className="surface-card p-8">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Description
         </h2>
         <p className="text-slate-700 whitespace-pre-wrap leading-relaxed">
@@ -156,11 +143,8 @@ export function RequestDetailPage() {
       </div>
 
       {/* Status Update */}
-      <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-slate-200/50 shadow-xl shadow-slate-200/50 p-8">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+      <div className="surface-card p-8">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Update Status
         </h2>
         <div className="flex gap-3">
@@ -170,7 +154,7 @@ export function RequestDetailPage() {
             className={`flex-1 px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
               request.status === 'open'
                 ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
-                : 'border-2 border-amber-200 text-amber-700 hover:bg-amber-50 hover:border-amber-300 disabled:opacity-40'
+                : 'border border-amber-200/70 text-amber-700 hover:bg-amber-50/70 hover:border-amber-300/70 disabled:opacity-40'
             }`}
           >
             Open
@@ -180,8 +164,8 @@ export function RequestDetailPage() {
             disabled={isUpdating || request.status === 'in_progress'}
             className={`flex-1 px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
               request.status === 'in_progress'
-                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
-                : 'border-2 border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-40'
+                ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
+                : 'border border-sky-200/70 text-sky-700 hover:bg-sky-50/70 hover:border-sky-300/70 disabled:opacity-40'
             }`}
           >
             In Progress
@@ -192,7 +176,7 @@ export function RequestDetailPage() {
             className={`flex-1 px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
               request.status === 'resolved'
                 ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                : 'border-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 disabled:opacity-40'
+                : 'border border-emerald-200/70 text-emerald-700 hover:bg-emerald-50/70 hover:border-emerald-300/70 disabled:opacity-40'
             }`}
           >
             Resolved
@@ -201,28 +185,20 @@ export function RequestDetailPage() {
       </div>
 
       {/* Audit Log */}
-      <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-slate-200/50 shadow-xl shadow-slate-200/50">
-        <div className="px-8 py-6 border-b border-slate-200/50">
-          <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+      <div className="surface-card">
+        <div className="px-8 py-6 border-b soft-divider">
+          <h2 className="text-lg font-semibold text-slate-900">
             Activity History
           </h2>
         </div>
         {auditLogs.length === 0 ? (
           <div className="p-12 text-center">
-            <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-              <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
             <p className="text-slate-500 text-sm">No activity yet</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-200/50">
+          <div className="divide-y soft-divider">
             {auditLogs.map((log) => (
-              <div key={log.id} className="px-8 py-5 hover:bg-slate-50/30 transition-all">
+              <div key={log.id} className="px-8 py-5 hover:bg-white/70 transition-all">
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-sm font-semibold text-slate-900 capitalize">
