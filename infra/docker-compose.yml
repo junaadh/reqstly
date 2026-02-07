@@ -188,4 +188,5 @@ services:
       - ./proxy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+      - ../../certs:/etc/caddy/certs:ro
 

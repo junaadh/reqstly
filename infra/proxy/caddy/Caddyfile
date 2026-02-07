@@ -44,6 +44,8 @@
 
 # Backend API
 https://api.reqstly.com {
+	tls /etc/caddy/certs/reqstly.pem /etc/caddy/certs/reqstly.key
+
 	reverse_proxy backend:3000
 
 	log {
@@ -54,6 +56,8 @@ https://api.reqstly.com {
 
 # Main frontend + observability endpoints
 https://reqstly.com {
+	tls /etc/caddy/certs/reqstly.pem /etc/caddy/certs/reqstly.key
+
 	# Health check endpoint
 	handle /health {
 		header {
