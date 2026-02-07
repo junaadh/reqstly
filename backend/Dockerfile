@@ -40,39 +40,26 @@ ENV SQLX_OFFLINE=true
 # Run dev server
 CMD ["cargo", "run"]
 
-# ---------- Builder ----------
-FROM base AS builder
+# ---------- Runtime (Production) ----------
+FROM rust:slim AS runtime
 
-# Copy built dependencies to speed up build
-COPY --from=deps /app/target /app/target
-COPY --from=deps /usr/local/cargo/bin/sqlx /usr/local/cargo/bin/sqlx
-COPY --from=deps /usr/local/cargo/bin/cargo-sqlx /usr/local/cargo/bin/cargo-sqlx
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    libz1 \
+    libzstd1 \
+    libgcc-s1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy project source
 COPY . .
 
 # Use offline metadata if present (.sqlx/) to avoid build-time DB dependency
 ENV SQLX_OFFLINE=true
 
-# Build the application in release mode
-RUN cargo build --release
-
-# ---------- Runtime (Production) ----------
-FROM debian:bookworm-slim AS runtime
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libssl3 \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy the release binary from builder
-COPY --from=builder /app/target/release/reqstly_backend /app/reqstly_backend
-
-# Copy migrations (needed for sqlx at runtime if you run migrations)
-COPY --from=builder /app/migrations /app/migrations
-
-EXPOSE 3000
-
-# Run the backend in production
-CMD ["/app/reqstly_backend"]
+# Build and run in release mode
+CMD ["sh", "-c", "cargo build --release && cargo run --release"]
