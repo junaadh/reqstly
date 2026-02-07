@@ -7,13 +7,38 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 /// Request status enum
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
-#[sqlx(type_name = "varchar")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RequestStatus {
     Open,
     InProgress,
     Resolved,
+}
+
+// Manual sqlx Type implementation to use Display/FromStr for varchar columns
+impl sqlx::Type<sqlx::Postgres> for RequestStatus {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for RequestStatus {
+    fn decode(
+        value: <sqlx::Postgres as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Self::from_str(&s).map_err(|e| e.into())
+    }
+}
+
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for RequestStatus {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <sqlx::Postgres as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let s = self.to_string();
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&s, buf)
+    }
 }
 
 impl FromStr for RequestStatus {
@@ -46,13 +71,38 @@ impl std::fmt::Display for RequestStatus {
 }
 
 /// Request category enum
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
-#[sqlx(type_name = "varchar")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RequestCategory {
     IT,
     Ops,
     Admin,
     HR,
+}
+
+// Manual sqlx Type implementation to use Display/FromStr for varchar columns
+impl sqlx::Type<sqlx::Postgres> for RequestCategory {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for RequestCategory {
+    fn decode(
+        value: <sqlx::Postgres as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Self::from_str(&s).map_err(|e| e.into())
+    }
+}
+
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for RequestCategory {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <sqlx::Postgres as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let s = self.to_string();
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&s, buf)
+    }
 }
 
 impl FromStr for RequestCategory {
@@ -82,14 +132,39 @@ impl std::fmt::Display for RequestCategory {
 
 /// Request priority enum
 #[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, PartialEq, Eq,
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq,
 )]
-#[sqlx(type_name = "varchar")]
 #[serde(rename_all = "lowercase")]
 pub enum RequestPriority {
     Low,
     Medium,
     High,
+}
+
+// Manual sqlx Type implementation to use Display/FromStr for varchar columns
+impl sqlx::Type<sqlx::Postgres> for RequestPriority {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for RequestPriority {
+    fn decode(
+        value: <sqlx::Postgres as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Self::from_str(&s).map_err(|e| e.into())
+    }
+}
+
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for RequestPriority {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <sqlx::Postgres as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let s = self.to_string();
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&s, buf)
+    }
 }
 
 impl FromStr for RequestPriority {
