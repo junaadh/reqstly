@@ -89,16 +89,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     command: >
       sh -c "
-        # Wait until Postgres is healthy
-        until pg_isready -h postgres -U ${POSTGRES_USER}; do
-          echo 'Waiting for Postgres...'
-          sleep 2
-        done
-
-        # Create DB if it doesn't exist
         sqlx database create || echo 'DB already exists'
-
-        # Run migrations
         sqlx migrate run
       "
     depends_on:
