@@ -74,8 +74,8 @@ impl std::fmt::Display for RequestCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RequestCategory::IT => write!(f, "IT"),
-            RequestCategory::Ops => write!(f, "Ops"),
-            RequestCategory::Admin => write!(f, "Admin"),
+            RequestCategory::Ops => write!(f, "OPS"),
+            RequestCategory::Admin => write!(f, "ADMIN"),
             RequestCategory::HR => write!(f, "HR"),
         }
     }
