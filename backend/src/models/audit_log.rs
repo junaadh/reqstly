@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
 #[sqlx(type_name = "varchar")]
+#[serde(rename_all = "snake_case")] // frontend uses 'status_changed'
 pub enum AuditAction {
     Created,
     Updated,

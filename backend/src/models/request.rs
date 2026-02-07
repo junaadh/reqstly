@@ -9,6 +9,7 @@ use uuid::Uuid;
 /// Request status enum
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
 #[sqlx(type_name = "varchar")]
+#[serde(rename_all = "lowercase")]
 pub enum RequestStatus {
     Open,
     InProgress,
@@ -47,6 +48,7 @@ impl std::fmt::Display for RequestStatus {
 /// Request category enum
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
 #[sqlx(type_name = "varchar")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum RequestCategory {
     IT,
     Ops,
@@ -84,6 +86,7 @@ impl std::fmt::Display for RequestCategory {
     Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, PartialEq, Eq,
 )]
 #[sqlx(type_name = "varchar")]
+#[serde(rename_all = "lowercase")]
 pub enum RequestPriority {
     Low,
     Medium,
