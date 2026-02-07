@@ -72,6 +72,11 @@ async fn main() {
         .await
         .expect("Failed to create database pool");
 
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("failed to run migrations");
+
     let redis_client = redis::Client::open(settings.redis.url.as_str())
         .expect("Failed to create redis client");
 

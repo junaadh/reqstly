@@ -61,5 +61,7 @@ COPY . .
 # Use offline metadata if present (.sqlx/) to avoid build-time DB dependency
 ENV SQLX_OFFLINE=true
 
+RUN cargo build --release
+
 # Build and run in release mode
-CMD ["sh", "-c", "cargo build --release && cargo run --release"]
+CMD ["sh", "-c", "cargo run --release"]
