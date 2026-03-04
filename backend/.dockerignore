@@ -1,3 +1,7 @@
-target/
-**/target/
+target
 .git
+.gitignore
+.env
+.env.*
+node_modules
+.DS_Store

@@ -1,74 +1,79 @@
-use config::{Config, ConfigError, Environment, File};
+use config::{Config, ConfigError, Environment};
 use serde::Deserialize;
-use std::env;
 
-#[derive(Debug, Deserialize)]
-pub struct Database {
-    pub url: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Server {
-    pub base_url: String,
-    pub port: u16,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Jwt {
-    pub secret: String,
-    pub expiration_hours: i64,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct AzureAd {
-    pub client_id: String,
-    pub tenant_id: String,
-    pub client_secret: String,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct Passkey {
-    pub rp_id: String,
-    pub origin: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Redis {
-    pub url: String,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
-    pub database: Database,
-    pub server: Server,
-    pub jwt: Jwt,
-    pub azure_ad: AzureAd,
-    pub passkey: Passkey,
-    pub redis: Redis,
+    pub server: ServerSettings,
+    pub database: DatabaseSettings,
+    pub jwt: JwtSettings,
+    pub supabase: SupabaseSettings,
+    pub cors: CorsSettings,
+    pub logging: LoggingSettings,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerSettings {
+    pub port: u16,
+    pub base_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatabaseSettings {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct JwtSettings {
+    pub secret: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SupabaseSettings {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CorsSettings {
+    pub allowed_origin: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingSettings {
+    pub level: String,
+    pub format: LogFormat,
+    pub service_name: String,
+    pub environment: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    Json,
+    Pretty,
+    Compact,
 }
 
 impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
-        let run_mode =
-            env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
-
-        let config = Config::builder()
-            .add_source(
-                File::with_name(&format!("config/{}.toml", run_mode))
-                    .required(false),
-            )
-            .add_source(File::with_name("config/default").required(false))
-            .add_source(Environment::default().separator("__"))
-            .build()?;
-
-        config.try_deserialize()
-    }
-
     pub fn from_env() -> Result<Self, ConfigError> {
-        let config = Config::builder()
+        Config::builder()
+            .set_default("server.port", 3000)?
+            .set_default("server.base_url", "http://localhost:3000")?
+            .set_default(
+                "database.url",
+                "postgres://postgres:postgres@localhost:5432/postgres",
+            )?
+            .set_default("jwt.secret", "dev-secret")?
+            .set_default("supabase.url", "http://localhost:54321")?
+            .set_default("cors.allowed_origin", "https://localhost")?
+            .set_default(
+                "logging.level",
+                "reqstly_backend=info,tower_http=info,axum=info",
+            )?
+            .set_default("logging.format", "json")?
+            .set_default("logging.service_name", "reqstly-backend")?
+            .set_default("logging.environment", "dev")?
             .add_source(Environment::default().separator("__"))
-            .build()?;
-
-        config.try_deserialize()
+            .build()?
+            .try_deserialize()
     }
 }
