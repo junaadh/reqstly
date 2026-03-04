@@ -1,44 +1,8 @@
-networks:
-  reqstly-public:
-    driver: bridge
-  reqstly-internal:
-    driver: bridge
-    internal: true
-  reqstly-monitoring:
-    driver: bridge
-
-volumes:
-  postgres-data:
-  redis-data:
-  prometheus-data:
-  caddy-data:
-  caddy-config:
-
 services:
-  postgres:
-    container_name: postgres
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    networks:
-      - reqstly-internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U reqstly"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-
   redis:
     container_name: redis
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
-    networks:
-      - reqstly-internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -48,128 +12,56 @@ services:
     volumes:
       - redis-data:/data
 
-  backend:
-    container_name: backend
-    build:
-      context: ../backend
-      target: runtime
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      DATABASE__URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS__URL: redis://redis:6379
-      RUST__LOG: info
-      JWT__SECRET: ${JWT_SECRET}
-      JWT__EXPIRATION_HOURS: 24
-      AZURE_AD__CLIENT_ID: ${AZURE_AD_CLIENT_ID}
-      AZURE_AD__TENANT_ID: ${AZURE_AD_TENANT_ID}
-      AZURE_AD__CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET}
-      PASSKEY__RP_ID: ${RP_ID}
-      PASSKEY__ORIGIN: ${ORIGIN}
-      SERVER__PORT: 3000
-      SERVER__BASE_URL: ${SERVER_BASE_URL}
-    networks:
-      - reqstly-public
-      - reqstly-internal
-      - reqstly-monitoring
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    expose:
-      - 3000
-    restart: unless-stopped
-
   migrate:
     container_name: migrate
     image: nxyt/sqlx-cli:v0.70
-    volumes:
-      - ./migrations:/migrations       # Mount your migrations folder
-    environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    platform: linux/amd64
     command: >
       sh -c "
-        sqlx database create || echo 'DB already exists'
+        sqlx database create || true &&
         sqlx migrate run
       "
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
-    networks:
-      - reqstly-internal
+      auth:
+        condition: service_healthy
     restart: "no"
+    volumes:
+      - ../../backend/migrations:/migrations
 
-  frontend:
-    container_name: frontend
+  backend:
+    container_name: backend
+    image: ${BACKEND_IMAGE:-reqstly-backend}:${BACKEND_IMAGE_TAG:-local}
     build:
-      context: ../frontend
-      target: production
+      context: ../../backend
+      target: runtime
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     environment:
-      VITE_API_URL: https://api.reqstly.com
-    networks:
-      - reqstly-public
+      DATABASE__URL: postgres://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}
+      SERVER__PORT: 3000
+      SERVER__BASE_URL: ${API_URL}
+      JWT__SECRET: ${JWT_SECRET}
+      SUPABASE__URL: ${SUPABASE_PUBLIC_URL}
+      CORS__ALLOWED_ORIGIN: ${APP_URL}
+      RUST_LOG: ${RUST_LOG:-info}
     depends_on:
-      - backend
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - 3000
     restart: unless-stopped
-
-  prometheus:
-    container_name: prometheus
-    image: prom/prometheus:v2.55.1
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=15d'
-    networks:
-      - reqstly-monitoring
-    depends_on:
-      - backend
-    restart: unless-stopped
-    volumes:
-      - prometheus-data:/prometheus
-      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-
-  grafana:
-    container_name: grafana
-    image: grafana/grafana:11.4.0
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: http://localhost:3001
-    networks:
-      - reqstly-public
-      - reqstly-monitoring
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
-  loki:
-    container_name: loki
-    image: grafana/loki:3.3.0
-    command:
-      - '-config.file=/etc/loki/local-config.yaml'
-      - '-config.expand-env=true'
-    networks:
-      - reqstly-monitoring
-    restart: unless-stopped
-    volumes:
-      - ./observability/loki/loki.yml:/etc/loki/local-config.yaml:ro
-
-  promtail:
-    container_name: promtail
-    image: grafana/promtail:3.3.0
-    command:
-      - '-config.file=/etc/promtail/config.yml'
-      - '-config.expand-env=true'
-    networks:
-      - reqstly-monitoring
-    depends_on:
-      - loki
-    restart: unless-stopped
-    volumes:
-      - ./observability/promtail/promtail.yml:/etc/promtail/config.yml:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   caddy:
     container_name: caddy
@@ -178,16 +70,18 @@ services:
       - "80:80"
       - "443:443"
       - "2019:2019"
-    networks:
-      - reqstly-public
     depends_on:
-      - frontend
-      - backend
-      - grafana
+      kong:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
-      - ./proxy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../proxy/caddy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-      - ../../certs:/etc/caddy/certs:ro
 
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:

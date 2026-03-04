@@ -1,0 +1,49 @@
+{
+	admin off
+}
+
+https://api.localhost {
+	tls internal
+	reverse_proxy backend:3000
+
+	log {
+		output file /dev/stdout
+		format console
+	}
+}
+
+https://supabase.localhost {
+	tls internal
+
+	handle /health {
+		header {
+			X-Service "supabase-gateway"
+			Content-Type application/json
+		}
+		respond `{"status":"ok","service":"supabase-gateway"}` 200
+	}
+
+	handle {
+		reverse_proxy kong:8000
+	}
+
+	log {
+		output file /dev/stdout
+		format console
+	}
+}
+
+https://localhost {
+	tls internal
+	handle /health {
+		header {
+			X-Service "caddy"
+			Content-Type application/json
+		}
+		respond `{"status":"ok","service":"caddy"}` 200
+	}
+
+	handle {
+		respond `{"service":"reqstly-infra","status":"ok"}` 200
+	}
+}

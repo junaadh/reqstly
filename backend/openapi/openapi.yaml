@@ -1,0 +1,547 @@
+openapi: 3.0.3
+info:
+  title: Reqstly Backend API
+  version: 0.2.0
+servers:
+  - url: https://api.reqstly.com
+  - url: https://api.localhost
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Meta:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+      required: [request_id]
+
+    ListMeta:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total_pages:
+          type: integer
+          minimum: 0
+      required: [request_id, total, page, limit, total_pages]
+
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+      required: [field, message]
+
+    ErrorPayload:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - UNAUTHORIZED
+            - NOT_FOUND
+            - VALIDATION_ERROR
+            - DATABASE_ERROR
+            - MIGRATION_ERROR
+            - INTERNAL_ERROR
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      required: [code, message]
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [error, meta]
+
+    HealthPayload:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+        version:
+          type: string
+      required: [status, service, version]
+
+    MePayload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+      required: [id, email, display_name]
+
+    EnumPayload:
+      type: object
+      properties:
+        status:
+          type: array
+          items:
+            type: string
+            enum: [open, in_progress, resolved]
+        category:
+          type: array
+          items:
+            type: string
+            enum: [IT, Ops, Admin, HR]
+        priority:
+          type: array
+          items:
+            type: string
+            enum: [low, medium, high]
+      required: [status, category, priority]
+
+    Request:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+          enum: [IT, Ops, Admin, HR]
+        status:
+          type: string
+          enum: [open, in_progress, resolved]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - owner_user_id
+        - title
+        - category
+        - status
+        - priority
+        - created_at
+        - updated_at
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        actor_user_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [created, updated, deleted, status_changed]
+        old_value:
+          type: object
+        new_value:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - request_id
+        - actor_user_id
+        - action
+        - old_value
+        - new_value
+        - created_at
+
+    CreateRequestInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 5000
+        category:
+          type: string
+          enum: [IT, Ops, Admin, HR]
+        priority:
+          type: string
+          enum: [low, medium, high]
+      required: [title, category, priority]
+
+    UpdateRequestInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 5000
+        category:
+          type: string
+          enum: [IT, Ops, Admin, HR]
+        status:
+          type: string
+          enum: [open, in_progress, resolved]
+        priority:
+          type: string
+          enum: [low, medium, high]
+
+    HealthResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/HealthPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    MeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/MePayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    EnumsResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/EnumPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    RequestResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Request'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    RequestListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Request'
+        meta:
+          $ref: '#/components/schemas/ListMeta'
+      required: [data, meta]
+
+    AuditListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+paths:
+  /health:
+    get:
+      summary: Infra/API process health check
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/health:
+    get:
+      summary: Versioned API health check
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/me:
+    get:
+      summary: Current authenticated user profile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/meta/enums:
+    get:
+      summary: Supported enum values for request fields
+      security: []
+      responses:
+        '200':
+          description: Enum values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnumsResponse'
+
+  /api/v1/requests:
+    get:
+      summary: List current user's requests
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, in_progress, resolved]
+        - in: query
+          name: category
+          schema:
+            type: string
+            enum: [IT, Ops, Admin, HR]
+        - in: query
+          name: priority
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [created_at, updated_at, -updated_at]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Request list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    post:
+      summary: Create a request for current user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequestInput'
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/requests/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a single owned request
+      responses:
+        '200':
+          description: Request found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    patch:
+      summary: Update an owned request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRequestInput'
+      responses:
+        '200':
+          description: Request updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    delete:
+      summary: Delete an owned request
+      responses:
+        '204':
+          description: Request deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/requests/{id}/audit:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get audit log for an owned request
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'

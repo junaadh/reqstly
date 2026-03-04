@@ -1,61 +1,38 @@
-# ---------- Base ----------
-FROM rust:slim AS base
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
+FROM rust:1.88-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# ---------- Dependency cache ----------
-FROM base AS deps
-
-# Copy manifest files to cache dependencies
-COPY Cargo.toml Cargo.lock ./
-
-# Dummy main.rs to build dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release || true
-RUN rm -rf src
-
-# ---------- Development ----------
-FROM base AS development
-
-COPY . .
-
-WORKDIR /app
-
-ENV SQLX_OFFLINE=true
-
-# Run dev server
-CMD ["cargo", "run"]
-
-# ---------- Runtime (Production) ----------
-FROM rust:slim AS runtime
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
-    ca-certificates \
-    libz1 \
-    libzstd1 \
-    libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# Copy project source
+FROM base AS development
+CMD ["cargo", "run"]
+
+FROM base AS chef
+RUN cargo install --locked cargo-chef --version 0.1.71
+
+FROM chef AS planner
 COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Use offline metadata if present (.sqlx/) to avoid build-time DB dependency
-ENV SQLX_OFFLINE=true
+FROM chef AS cacher
+COPY --from=planner /app/recipe.json /app/recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-RUN cargo build --release
+FROM base AS builder
+COPY . .
+COPY --from=cacher /app/target /app/target
+COPY --from=cacher /usr/local/cargo /usr/local/cargo
+RUN cargo build --release --locked
 
-# Build and run in release mode
-CMD ["cargo", "run", "--release"]
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /app/target/release/reqstly_backend /usr/local/bin/reqstly_backend
+CMD ["reqstly_backend"]

@@ -1,526 +1,301 @@
-# Reqstly - Project Plan
-
-**Vision**: Internal request management system on a single VPS using Docker Swarm with modern authentication
-
-**Timeline**: 14 days  
-**Deployment**: Single VPS with Docker Swarm  
-**Authentication**: Azure AD SSO + Passkeys (WebAuthn)
-
----
-
-## Executive Summary
-
-### What is Reqstly?
-A lightweight internal ticketing system where teams can:
-- Submit requests (IT, Ops, Admin, HR)
-- Track status (Open → In Progress → Resolved)
-- View audit history
-- Login via Azure AD or Passkeys
-
-### Why This Stack?
-- **Single VPS**: Cost-effective, realistic for small/medium teams
-- **Docker Swarm**: Production orchestration without K8s overhead
-- **Hybrid Auth**: Enterprise SSO + modern passwordless experience
-- **Full Observability**: Metrics, logs, dashboards from day one
-
-### Target VPS Specs
-- **Provider**: DigitalOcean, Hetzner, Vultr (~$8/month)
-- **Resources**: 2 vCPUs, 4GB RAM, 80GB SSD
-- **OS**: Ubuntu 24.04 LTS
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────┐
-│  VPS (Single Server - Docker Swarm)         │
-│                                             │
-│  Internet → Caddy (TLS) → Overlay Networks  │
-│                 │                           │
-│                 ├─► Frontend (Vite + TypeScript + React Compiler)        │
-│                 ├─► Backend (Rust)          │
-│                 ├─► PostgreSQL              │
-│                 └─► Grafana (Monitoring)    │
-│                                             │
-│  Prometheus ← Metrics ← All Services        │
-│  Loki ← Logs ← All Services                 │
-└─────────────────────────────────────────────┘
-```
-
-### Container Allocation
-| Service | Replicas | Purpose |
-|---------|----------|---------|
-| Caddy | 1 | Reverse proxy, auto-TLS, metrics |
-| Frontend | 1 | Vite + TypeScript + React Compiler |
-| Backend | 2 | Rust API (load balanced) |
-| PostgreSQL | 1 | Primary database |
-| Prometheus | 1 | Metrics collection |
-| Loki | 1 | Log aggregation |
-| Promtail | 1 | Log shipping |
-| Grafana | 1 | Visualization |
-
----
-
-## Technology Stack
-
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| **Orchestration** | Docker Swarm | Built-in, no K8s complexity |
-| **Reverse Proxy** | Caddy 2.7 | Auto-HTTPS, simple config |
-| **Frontend** | Vite + TypeScript + React Compiler | Modern, type-safe SPA with optimizations |
-| **Backend** | Rust (Axum) | Fast, safe, low memory |
-| **Database** | PostgreSQL 16 | ACID, proven |
-| **ORM** | sqlx | Async, compile-time checks |
-| **Auth** | Azure AD + Passkeys | SSO + passwordless |
-| **Metrics** | Prometheus | Industry standard |
-| **Logs** | Loki + Promtail | Lightweight aggregation |
-| **Dashboards** | Grafana | Unified observability |
-| **CI/CD** | GitHub Actions | Free, integrated |
-
----
-
-## Phase Breakdown
-
-### Phase 1: Foundation (Days 1-3)
-**Goal**: Secure VPS with Docker Swarm ready
-
-**Deliverables**:
-- [ ] VPS provisioned and hardened (UFW, fail2ban, SSH keys)
-- [ ] Docker + Docker Swarm initialized
-- [ ] Overlay networks created (public, internal, monitoring)
-- [ ] Docker secrets initialized
-- [ ] GitHub repository with clean structure
-- [ ] Database schema designed (users, requests, passkeys, sessions, audit_logs)
-- [ ] `.env.example` and `.gitignore` configured
-
-**Key Files**:
-- `scripts/setup-vps.sh` - VPS hardening automation
-- `backend/migrations/001_initial_schema.sql` - Database DDL
-- `.env.example` - All required environment variables
-
----
-
-### Phase 2: Core Application (Days 4-6)
-**Goal**: Working API and basic frontend
-
-**Deliverables**:
-- [ ] Rust backend with Axum framework
-- [ ] Database models (User, Request, Session, PasskeyCredential)
-- [ ] CRUD handlers for requests
-- [ ] Health check endpoint
-- [ ] Vite Typescript React frontend scaffolded
-- [ ] Basic UI components (login, request list, create form)
-- [ ] Dockerfiles for backend and frontend
-- [ ] Docker Compose stack definition
-
-**Key Files**:
-- `backend/Cargo.toml` - Rust dependencies
-- `backend/src/main.rs` - API server
-- `backend/src/models/*.rs` - Data models
-- `backend/src/handlers/*.rs` - HTTP handlers
-- `frontend/package.json` - Node dependencies
-- `frontend/src/App.tsx` - Main Vite Typescript React app
-- `infra/docker-compose.yml` - Swarm stack definition
-
----
-
-### Phase 3: Authentication (Days 7-8)
-**Goal**: Both auth methods working
-
-**Deliverables**:
-- [ ] Azure AD OIDC integration
-- [ ] JWT token validation
-- [ ] Passkey registration flow (WebAuthn)
-- [ ] Passkey authentication flow
-- [ ] Session management (httpOnly cookies)
-- [ ] Auth middleware for protected routes
-- [ ] Frontend auth context and hooks
-
-**Key Files**:
-- `backend/src/auth/azure.rs` - Azure AD integration
-- `backend/src/auth/passkey.rs` - WebAuthn implementation
-- `backend/src/auth/session.rs` - Session management
-- `frontend/src/auth/AuthContext.tsx` - Auth state management
-- `frontend/src/auth/usePasskey.ts` - Passkey hooks
-
-**Testing Checklist**:
-- [ ] Can login with Azure AD
-- [ ] Can register a passkey after Azure login
-- [ ] Can login with passkey on subsequent visits
-- [ ] Sessions expire correctly
-- [ ] Logout works for both methods
-
----
-
-### Phase 4: Observability (Days 9-10)
-**Goal**: Full visibility into system health
-
-**Deliverables**:
-- [ ] Prometheus scraping all services
-- [ ] Structured JSON logging (backend)
-- [ ] Loki collecting all logs
-- [ ] Grafana dashboards:
-  - Service overview (requests/sec, errors, latency)
-  - Infrastructure (CPU, RAM, disk)
-  - Business metrics (requests by category, resolution time)
-- [ ] Basic alerts configured
-- [ ] Caddy metrics endpoint exposed
-
-**Key Files**:
-- `infra/prometheus/prometheus.yml` - Scrape configs
-- `infra/prometheus/alerts.yml` - Alert rules
-- `infra/loki/loki.yml` - Log retention config
-- `infra/promtail/promtail.yml` - Log collection
-- `infra/grafana/provisioning/` - Auto-provisioning
-- `infra/grafana/dashboards/*.json` - Dashboard definitions
-- `backend/src/metrics.rs` - Prometheus metrics
-
-**Metrics to Track**:
-- HTTP request rate, duration, status codes
-- Database connection pool stats
-- Active sessions
-- Request creation rate
-- Auth success/failure rates
-
----
-
-### Phase 5: Deployment & Automation (Days 11-12)
-**Goal**: One-command deployment with rollback
-
-**Deliverables**:
-- [ ] Caddyfile for reverse proxy (auto-HTTPS)
-- [ ] Docker Swarm stack tested locally
-- [ ] Deployment script with health checks
-- [ ] Rollback script
-- [ ] Backup script for PostgreSQL
-- [ ] GitHub Actions CI/CD pipeline:
-  - Linting (Rust clippy, ESLint)
-  - Testing (unit tests)
-  - Security scanning (cargo audit, Trivy)
-  - Build and push Docker images
-  - Deploy to VPS (on main branch)
-- [ ] Secrets management (Docker secrets)
-
-**Key Files**:
-- `infra/caddy/Caddyfile` - Reverse proxy config
-- `scripts/deploy.sh` - Deployment automation
-- `scripts/rollback.sh` - Emergency rollback
-- `scripts/backup.sh` - Database backups
-- `.github/workflows/ci.yml` - CI pipeline
-- `.github/workflows/deploy.yml` - CD pipeline
-
-**Deployment Flow**:
-1. Developer pushes to `main`
-2. GitHub Actions: lint → test → build → push images
-3. SSH to VPS
-4. Run `docker stack deploy`
-5. Health check passes → success
-6. Health check fails → automatic rollback
-
----
-
-### Phase 6: Documentation & Polish (Days 13-14)
-**Goal**: Interview-ready project
-
-**Deliverables**:
-- [ ] README.md with:
-  - Project overview
-  - Architecture diagram
-  - Quick start guide
-  - Deployment instructions
-- [ ] ARCHITECTURE.md - Deep dive on design decisions
-- [ ] RUNBOOK.md - Operational procedures:
-  - How to deploy
-  - How to rollback
-  - How to backup/restore
-  - How to scale
-  - Common issues and fixes
-- [ ] ADRs (Architecture Decision Records):
-  - Why single-VPS Swarm?
-  - Why Caddy over Nginx?
-  - Why hybrid auth (Azure + Passkeys)?
-  - Why Rust backend?
-- [ ] Demo script for interviews
-- [ ] Code cleanup (remove TODOs, add comments)
-- [ ] Security audit checklist
-
-**Key Files**:
-- `README.md` - Main documentation
-- `docs/ARCHITECTURE.md` - Technical deep dive
-- `docs/RUNBOOK.md` - Operations manual
-- `docs/ADR/*.md` - Decision records
-- `scripts/demo.sh` - Interview demo
-
----
-
-## Success Criteria
-
-### Technical Validation
-- [ ] All containers healthy in Swarm
-- [ ] Can login with Azure AD
-- [ ] Can register and use passkey
-- [ ] Can create/update/view requests
-- [ ] Audit logs capture all changes
-- [ ] Metrics visible in Grafana
-- [ ] Logs searchable in Loki
-- [ ] TLS certificates auto-renew
-- [ ] Health checks trigger container restart
-- [ ] Rolling updates work without downtime
-- [ ] Backup/restore tested
-
-### Security Checklist
-- [ ] No root login via SSH
-- [ ] Firewall enabled (only 22, 80, 443)
-- [ ] Fail2ban protecting SSH
-- [ ] Docker secrets for sensitive data
-- [ ] Sessions use httpOnly cookies
-- [ ] HTTPS enforced (HSTS headers)
-- [ ] WebAuthn credentials stored securely
-- [ ] Database network is isolated
-- [ ] No secrets in git history
-
-### Performance Targets
-- [ ] API response time p95 < 200ms
-- [ ] Frontend first paint < 2s
-- [ ] Can handle 100 concurrent users
-- [ ] Memory usage stable over 24h
-
-### Documentation Quality
-- [ ] Non-technical person can understand README
-- [ ] Another engineer can deploy from docs
-- [ ] All design decisions explained
-- [ ] Interview demo takes < 5 minutes
-
----
-
-## Interview Preparation
-
-### Demo Flow (5 minutes)
-1. **Architecture Overview** (30s)
-   - Show diagram: single VPS, Docker Swarm, all components
-   
-2. **Authentication Demo** (1.5 min)
-   - Login with Azure AD
-   - Register a passkey
-   - Logout and login with passkey
-   
-3. **Core Functionality** (1 min)
-   - Create a request
-   - Show in database (via Grafana query or direct SQL)
-   - Update status
-   - View audit log
-   
-4. **Observability** (1.5 min)
-   - Open Grafana dashboard
-   - Show live metrics (request rate, latency)
-   - Search logs in Loki
-   - Show alert configuration
-   
-5. **Deployment** (30s)
-   - Trigger GitHub Actions workflow
-   - Show rolling update in progress
-   - Health check passes
-
-### Key Talking Points
-
-**Why Single VPS?**
-> "I wanted to demonstrate production patterns without cloud complexity. Docker Swarm provides orchestration, networking, secrets, and health checks—all the essentials—while staying cost-effective. This mirrors real-world constraints where not every team has Kubernetes."
-
-**Why Hybrid Auth?**
-> "Azure AD provides enterprise SSO, but passkeys eliminate password fatigue for returning users. WebAuthn is cryptographically secure, phishing-resistant, and the future of authentication. Supporting both shows I can integrate legacy and modern patterns."
-
-**Why Caddy?**
-> "Caddy automates TLS—no certbot cron jobs, no manual renewal. It embodies DevOps philosophy: eliminate toil through automation. The configuration is also 80% smaller than Nginx, reducing complexity and failure modes."
-
-**Why Rust?**
-> "Rust provides memory safety without garbage collection overhead. For a resource-constrained VPS, every MB counts. The type system also catches bugs at compile time, reducing production issues."
-
-**How Would You Scale This?**
-> "Vertical: Upgrade VPS to 16GB RAM. Horizontal: Add Swarm nodes, scale backend replicas, add PostgreSQL read replicas. Eventually: Move to managed K8s, add Redis for sessions, CDN for frontend assets. But start simple, scale when metrics prove you need it."
-
-**Disaster Recovery?**
-> "Daily automated backups to S3-compatible storage. All infrastructure is in code (Docker Compose, Caddyfile). RTO: 30 minutes to rebuild from scratch. RPO: 24 hours (daily backups). For critical production, I'd add WAL archiving for point-in-time recovery."
-
-### Questions to Expect
-
-**Q: Why not Kubernetes?**
-> "K8s is powerful but overkill here. Swarm provides 80% of the orchestration features with 20% of the complexity. For a single-server deployment, Swarm's simplicity is a feature, not a limitation."
-
-**Q: What about database replication?**
-> "I kept PostgreSQL single-instance to focus on the DevOps patterns around it—backups, monitoring, connection pooling. In production, I'd add streaming replication with PgBouncer for connection pooling and automatic failover."
-
-**Q: Security concerns with VPS?**
-> "Defense in depth: hardened SSH, firewall, fail2ban, network isolation, secrets management, audit logging, HTTPS everywhere, automated security updates. The attack surface is minimal—only ports 80/443 exposed, everything else firewalled."
-
-**Q: How do you monitor costs?**
-> "VPS is fixed cost ($45/month). For scaling, I'd track cost-per-request using Prometheus metrics. If traffic grows, compare VPS scaling vs cloud migration economics. Sometimes staying on VPS is cheaper than equivalent cloud services."
-
----
-
-## Repository Structure
-
-```
-reqstly/
-├── backend/
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── config.rs
-│   │   ├── db.rs
-│   │   ├── metrics.rs
-│   │   ├── auth/
-│   │   │   ├── mod.rs
-│   │   │   ├── azure.rs
-│   │   │   ├── passkey.rs
-│   │   │   └── session.rs
-│   │   ├── handlers/
-│   │   │   ├── mod.rs
-│   │   │   ├── auth.rs
-│   │   │   ├── requests.rs
-│   │   │   └── health.rs
-│   │   └── models/
-│   │       ├── mod.rs
-│   │       ├── user.rs
-│   │       ├── request.rs
-│   │       └── passkey.rs
-│   ├── migrations/
-│   │   └── 001_initial_schema.sql
-│   ├── Cargo.toml
-│   └── Dockerfile
-│
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── auth/
-│   │   └── api/
-│   ├── package.json
-│   └── Dockerfile
-│
-├── infra/
-│   ├── caddy/
-│   │   └── Caddyfile
-│   ├── prometheus/
-│   │   ├── prometheus.yml
-│   │   └── alerts.yml
-│   ├── loki/
-│   │   └── loki.yml
-│   ├── promtail/
-│   │   └── promtail.yml
-│   ├── grafana/
-│   │   ├── provisioning/
-│   │   └── dashboards/
-│   ├── docker-compose.yml
-│   └── docker-compose.monitoring.yml
-│
-├── scripts/
-│   ├── setup-vps.sh
-│   ├── deploy.sh
-│   ├── rollback.sh
-│   └── backup.sh
-│
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── RUNBOOK.md
-│   └── ADR/
-│
-├── .github/
-│   └── workflows/
-│       ├── ci.yml
-│       └── deploy.yml
-│
-├── .env.example
-├── .gitignore
-├── README.md
-└── PLAN.md
+# Reqstly Rewrite Plan (Big-Bang, Refined)
+
+## 1) Mission and Constraints
+
+### Mission
+Rebuild Reqstly in strict sequence with a production-first delivery model:
+1. Backend first
+2. Backend hardening and test depth
+3. Frontend rewrite (SvelteKit)
+4. Observability stack last
+
+### Non-Negotiable Constraints
+- Supabase Auth (`auth.users`) is the identity source of truth.
+- App data is in Supabase Postgres (`app.*` schema).
+- Infra remains Docker Compose + Caddy + Redis + VPS deploy via GitHub Actions.
+- No legacy compatibility layer unless explicitly requested.
+- No frontend work before backend phase gate passes.
+- No observability stack before frontend phase gate passes.
+
+### Current Reality (March 3, 2026)
+- Backend reintroduced and running in dev compose.
+- Frontend intentionally removed.
+- Observability services intentionally removed.
+- Supabase is now sourced from the official full docker bundle in `infra/supabase/`.
+- Compose scripts available: `scripts/up-dev.sh`, `scripts/up-prod.sh`, `scripts/smoke-check.sh`.
+
+## 2) Phase Status Snapshot (March 5, 2026)
+
+- Phase 0 (Infra Foundation): **complete**
+- Phase 1 (Backend Core): **complete**
+- Phase 2 (Backend Hardening): **complete**
+- Phase 3 (Frontend Rewrite): **not started**
+- Phase 4 (Observability): **not started**
+
+### Phase 1 completion checklist
+- [x] Confirm Supabase-issued token E2E from host shell (`./scripts/token-e2e-check.py`)
+- [x] OpenAPI parity check (`./scripts/openapi-parity-check.py`)
+- [x] CI hard gates enabled (`fmt`, `clippy`, `openapi parity`, backend tests + coverage)
+- [x] Contract tests and performance sanity checks in integration suite
+
+### Phase 2 completion checklist
+- [x] Failure-path tests for auth, validation, DB constraints, and ownership
+- [x] Pagination/sorting behavior tests
+- [x] Performance sanity checks for bounds and indexes
+- [x] Backend test harness stable locally with repeatable runs (including DB bootstrap path)
+- [x] CI backend checks are defined and enforced in repository workflows; GitHub branch protection remains an external admin setting
+
+## 3) Architecture Decision
+
+### Decision: Backend architecture pattern
+
+### Context
+- Team size: small.
+- Product scope: medium and growing (auth, ticket lifecycle, audit, future realtime, future storage).
+- Need strong testability and low coupling to framework/infrastructure details.
+
+### Options Considered
+1. Layered monolith.
+2. Clean/Hexagonal modular monolith.
+
+### Decision
+Use a **modular monolith** with **Clean/Hexagonal boundaries**:
+- Domain: entities, rules, invariants.
+- Application: use-cases and orchestration.
+- Adapters: HTTP handlers, SQLx repositories, auth/JWT integration.
+- Framework/Infra: Axum, Postgres, Supabase Auth, Redis, Caddy.
+
+### Why
+- Keeps complexity appropriate for current team size.
+- Preserves testability and swap-ability for adapters.
+- Avoids premature microservice fragmentation.
+
+### Consequences
+- Positive: clear dependency flow inward, easier unit/integration testing, stable API contracts.
+- Trade-off: requires discipline in module boundaries and review checklists.
+
+## 4) Target Backend Structure (Phase 1-2 target)
+
+```text
+backend/
+  src/
+    main.rs
+    config.rs
+    error.rs
+    response.rs
+    api/
+      mod.rs
+      handlers/
+      dto/
+    app/
+      use_cases/
+      services/
+    domain/
+      request/
+      audit/
+      errors/
+    infra/
+      db/
+      auth/
+      cache/
+  migrations/
+  openapi/
 ```
 
----
+Rules:
+- `domain` has zero framework imports.
+- `app` depends on `domain` only.
+- `api` maps HTTP <-> app DTOs.
+- `infra` implements adapter ports.
 
-## Risk Mitigation
+## 5) API and Data Design Baseline
 
-### Technical Risks
+### API contract
+- Version prefix: `/api/v1`.
+- Uniform success/error envelope across handlers.
+- Health endpoints:
+  - Infra/Caddy: `/health` on app domain.
+  - Backend API: `/api/v1/health` (and direct `api.localhost/health` route currently proxied).
 
-**Risk**: VPS runs out of memory
-- **Mitigation**: Container resource limits, Prometheus alerts, swap space
-- **Contingency**: Vertical scaling (upgrade VPS plan)
+### Auth model
+- JWT issued by Supabase Auth (GoTrue).
+- `sub` maps to `auth.users.id`.
+- No app-owned users table duplication.
 
-**Risk**: Database corruption
-- **Mitigation**: Daily backups, WAL archiving, transaction logs
-- **Contingency**: Restore from backup (documented in runbook)
+### DB model (current direction)
+- `app.requests` with FK to `auth.users` (`owner_user_id`, optional `assignee_user_id`).
+- `app.request_audit_logs` with FK to `auth.users` (`actor_user_id`).
+- RLS enabled for ownership-based access.
+- Realtime publication includes request and audit tables.
 
-**Risk**: TLS certificate renewal fails
-- **Mitigation**: Caddy automatic renewal, monitoring cert expiry
-- **Contingency**: Manual Let's Encrypt renewal procedure
+## 6) Environment and Deployment Model
 
-**Risk**: Swarm manager node fails
-- **Mitigation**: Automated backups, health monitoring
-- **Contingency**: Rebuild from infra code + restore DB backup
+### Environments
+- `dev`: local compose, self-signed local TLS via Caddy.
+- `staging`: VPS deploy from CI, smoke tests required.
+- `production`: promoted only after staging success.
 
-### Timeline Risks
+### Config policy
+- Canonical env vars in `.env.example`.
+- Local overrides in `.env.local`.
+- No duplicate aliases for same meaning.
+- Keep `SMOKE_INSECURE_TLS=true` only for local self-signed cert workflows.
 
-**Risk**: Authentication takes longer than 2 days
-- **Mitigation**: Start with Azure AD only, add passkeys later
-- **Buffer**: Can reduce observability scope if needed
+### Container policy
+- Pin image versions (avoid floating `latest`).
+- Multi-stage builds where possible.
+- Health checks for critical services.
+- Keep runtime services minimal per phase scope.
+- For local full Supabase stack, require Docker VM capacity of at least 7GB RAM and 4 CPU (8GB RAM recommended).
 
-**Risk**: Unfamiliar with WebAuthn
-- **Mitigation**: Use `webauthn-rs` crate (batteries included)
-- **Fallback**: Document passkey integration as "future work"
+## 7) CI/CD Target Workflow (Staging-first, Mandatory)
 
----
+### Trigger model
+- PR to `master`: run CI checks only.
+- Push to `master`: CI + deploy pipeline.
 
-## Post-Launch Roadmap
+### Required CI stages
+1. `backend-format`: `cargo fmt --check`.
+2. `backend-lint`: `cargo clippy -- -D warnings`.
+3. `backend-test-unit`: fast unit tests.
+4. `backend-test-integration`: DB-backed integration tests.
+5. `backend-contract`: OpenAPI/schema envelope assertions.
+6. `frontend-check` (Phase 3 onward): bun install/check/build.
 
-### Phase 7: Enhancements (Optional)
-- [ ] Email notifications for request updates
-- [ ] Request comments/discussion
-- [ ] File attachments
-- [ ] Request templates
-- [ ] SLA tracking
-- [ ] Mobile app (React Native)
+### Required CD stages
+1. Deploy staging.
+2. Run staging smoke checks.
+3. Manual approval gate.
+4. Deploy production.
+5. Run production smoke checks.
 
-### Phase 8: Advanced Features (Optional)
-- [ ] Multi-tenancy support
-- [ ] Advanced analytics dashboard
-- [ ] Slack/Teams integration
-- [ ] API rate limiting
-- [ ] Elasticsearch for full-text search
-- [ ] PostgreSQL read replicas
+### Rollback policy
+- If staging smoke fails: stop promotion.
+- If production smoke fails: rollback to previous known good image/commit.
+- Keep rollback command documented in runbook.
 
----
+## 8) Phase Plan with Exit Gates
 
-## Time Estimates
+### Phase 0: Infra Foundation (complete)
+Scope:
+- Compose scripts and env normalization.
+- Caddy routing for app/api/supabase domains.
+- Official full Supabase stack (base compose) + Reqstly overlay services (backend/migrate/caddy/redis).
 
-| Phase | Days | Hours | Focus |
-|-------|------|-------|-------|
-| Phase 1 | 3 | 24 | VPS setup, database schema |
-| Phase 2 | 3 | 24 | Core app (backend + frontend) |
-| Phase 3 | 2 | 16 | Authentication (Azure + Passkeys) |
-| Phase 4 | 2 | 16 | Observability (metrics + logs) |
-| Phase 5 | 2 | 16 | Deployment automation |
-| Phase 6 | 2 | 16 | Documentation + demo prep |
-| **Total** | **14** | **112** | |
+Exit gate:
+- `./scripts/up-dev.sh` succeeds from clean volumes.
+- `./scripts/smoke-check.sh` succeeds with local env.
+- Dev compose services healthy and deterministic restart behavior.
 
-**Daily commitment**: 8 hours/day average
+### Phase 1: Backend Core (Supabase-dependent, complete)
+Scope:
+- Implement request lifecycle APIs and `/api/v1/me`.
+- Enforce envelope consistency and validation rules.
+- Keep migrations deterministic from empty DB.
+- Maintain OpenAPI draft current with implementation.
 
----
+Exit gate:
+- Core endpoints functional against Supabase-issued token.
+- Migrations apply cleanly on fresh DB.
+- API docs and implementation match.
 
-## Final Checklist
+### Phase 2: Backend Hardening (complete)
+Scope:
+- Add unit + integration + contract test layers.
+- Add failure-path tests (auth, validation, DB constraints, ownership).
+- Add pagination and sorting behavior tests.
+- Add performance sanity checks (bounded queries, index usage checks where relevant).
 
-### Before Interview
-- [ ] Can deploy entire stack in < 5 minutes
-- [ ] Can demo all features in < 5 minutes
-- [ ] Can explain every technical decision
-- [ ] Have answers to common scaling questions
-- [ ] Screenshots/videos of system working
-- [ ] Clean git history (no "fix typo" commits)
-- [ ] All secrets removed from repo
-- [ ] README has compelling intro paragraph
+Exit gate:
+- CI backend checks green on every PR.
+- Integration tests stable and repeatable.
+- Error schema and status codes consistent across all endpoints.
 
-### Portfolio Presentation
-- [ ] Add to personal website/portfolio
-- [ ] Write blog post about hybrid auth implementation
-- [ ] Share on LinkedIn with key learnings
-- [ ] Include in CV under "Personal Projects"
-- [ ] Prepare 2-minute elevator pitch
+### Phase 3: Frontend Rewrite (SvelteKit)
+Scope:
+- Recreate frontend with SvelteKit SSR.
+- Use Supabase Auth client flows.
+- Consume backend `/api/v1` exclusively.
+- Implement required routes: `/login`, `/`, `/requests`, `/requests/new`, `/requests/[id]`, `/profile`.
+
+Tooling rule:
+- Use `bun`/`bunx` for install/build/check/test flows.
+
+Exit gate:
+- End-to-end request lifecycle from UI works reliably.
+- Session persistence stable across reload/navigation.
+- Frontend checks green in CI.
+
+### Phase 4: Observability (final)
+Scope:
+- Reintroduce Prometheus, Loki, Promtail, Grafana.
+- Dashboard minimums:
+  - API request rate, p95 latency, error rate.
+  - Auth success/failure rates.
+  - DB availability/connection saturation.
+- Actionable alert rules and runbook links.
+
+Exit gate:
+- Observability stack healthy in compose and staging.
+- Alerts validated through controlled failure simulation.
+
+## 9) Quality Gates and SLO-style Targets
+
+### Reliability targets
+- Staging smoke success rate: 100% before production promotion.
+- Production deployment requires successful post-deploy smoke.
+
+### API quality targets
+- All endpoints use uniform envelope.
+- No unbounded list endpoint.
+- Ownership access enforced at app layer and RLS layer.
+
+### Performance guardrails
+- Pagination default and max limits enforced.
+- Query patterns backed by indexes matching filters/sorts.
+
+## 10) Risk Register and Mitigations
+
+1. Supabase image/tag drift breaks startup.
+- Mitigation: pinned image tags and explicit upgrade procedure.
+
+2. DB init/migration race conditions.
+- Mitigation: dedicated `migrate` service + health-gated dependencies.
+
+3. TLS trust failures in local smoke checks.
+- Mitigation: local-only `SMOKE_INSECURE_TLS=true` support.
+
+4. Drift between OpenAPI and implementation.
+- Mitigation: contract checks in CI.
+
+5. Phase bleed (frontend/observability started early).
+- Mitigation: enforce phase gates in this plan and PR review checklist.
+
+6. Full Supabase stack instability on low-resource local Docker VM (analytics OOM kills).
+- Mitigation: enforce minimum local Docker resources (>=7GB RAM / 4 CPU, recommend 8GB RAM) in dev startup scripts and onboarding docs.
+
+## 11) Execution Checklists (from architecture + DevOps reviews)
+
+Architecture Design Progress:
+- [x] Step 1: Understand requirements and constraints
+- [x] Step 2: Assess project size and team capabilities
+- [x] Step 3: Select architecture pattern
+- [x] Step 4: Define directory structure
+- [x] Step 5: Document trade-offs and decision
+- [x] Step 6: Validate against decision framework
+
+DevOps Setup Progress:
+- [x] Step 1: Containerize application (Dockerfile)
+- [~] Step 2: Set up CI/CD pipeline (staging-first exists, hardening pending)
+- [x] Step 3: Define deployment strategy
+- [ ] Step 4: Configure monitoring & alerting
+- [x] Step 5: Set up environment management
+- [ ] Step 6: Document runbooks
+- [x] Step 7: Validate against anti-patterns checklist
+
+## 12) Immediate Next Actions (ordered)
+
+1. Enforce required CI checks in GitHub branch protection for PR hard-gating.
+2. Add explicit rollback job/procedure in deploy workflow runbook.
+3. Define Phase 3 frontend API consumption contract tests before SvelteKit build-out.
+4. Start frontend only after backend hardening gate is green.
