@@ -56,23 +56,29 @@ echo "- env: ${SELECTED_ENV_FILE}"
 
 COMPOSE_WAIT_TIMEOUT="${COMPOSE_WAIT_TIMEOUT:-900}"
 COMPOSE_BUILD="${COMPOSE_BUILD:-0}"
+COMPOSE_NO_DEPS="${COMPOSE_NO_DEPS:-0}"
 BACKEND_HEALTH_TIMEOUT="${BACKEND_HEALTH_TIMEOUT:-900}"
 BACKEND_HEALTH_INTERVAL="${BACKEND_HEALTH_INTERVAL:-2}"
 BACKEND_HEALTH_CONTAINER="${BACKEND_HEALTH_CONTAINER:-backend}"
 BACKEND_HEALTH_CHECK="${BACKEND_HEALTH_CHECK:-auto}"
+
+compose_no_deps_args=()
+if [[ "${COMPOSE_NO_DEPS}" == "1" ]] && (( $# > 0 )); then
+  compose_no_deps_args+=(--no-deps)
+fi
 
 if [[ "${COMPOSE_BUILD}" == "1" ]]; then
   docker compose \
     --env-file "${SELECTED_ENV_FILE}" \
     -f "${BASE_COMPOSE_FILE}" \
     -f "${OVERLAY_COMPOSE_FILE}" \
-    up -d --build --remove-orphans --wait --wait-timeout "${COMPOSE_WAIT_TIMEOUT}" "$@"
+    up -d --build --remove-orphans --wait --wait-timeout "${COMPOSE_WAIT_TIMEOUT}" "${compose_no_deps_args[@]}" "$@"
 else
   docker compose \
     --env-file "${SELECTED_ENV_FILE}" \
     -f "${BASE_COMPOSE_FILE}" \
     -f "${OVERLAY_COMPOSE_FILE}" \
-    up -d --remove-orphans --wait --wait-timeout "${COMPOSE_WAIT_TIMEOUT}" "$@"
+    up -d --remove-orphans --wait --wait-timeout "${COMPOSE_WAIT_TIMEOUT}" "${compose_no_deps_args[@]}" "$@"
 fi
 
 should_wait_backend="true"
