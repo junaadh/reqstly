@@ -63,6 +63,40 @@ services:
       - 3000
     restart: unless-stopped
 
+  frontend:
+    container_name: frontend
+    image: ${FRONTEND_IMAGE:-reqstly-frontend}:${FRONTEND_IMAGE_TAG:-local}
+    build:
+      context: ../../frontend
+      target: runtime
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      ORIGIN: ${APP_URL}
+      PUBLIC_API_BASE_URL: ${API_URL}
+      PRIVATE_API_BASE_URL: ${PRIVATE_API_BASE_URL:-http://backend:3000}
+      PRIVATE_SUPABASE_URL: ${PRIVATE_SUPABASE_URL:-http://kong:8000}
+      PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
+      PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_AUTH_JWT_ISSUER: ${SUPABASE_PUBLIC_URL}/auth/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
+    expose:
+      - 3000
+    restart: unless-stopped
+
   caddy:
     container_name: caddy
     image: caddy:2.7-alpine
@@ -74,6 +108,8 @@ services:
       kong:
         condition: service_healthy
       backend:
+        condition: service_healthy
+      frontend:
         condition: service_healthy
     restart: unless-stopped
     volumes:

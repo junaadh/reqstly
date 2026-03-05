@@ -3,7 +3,7 @@
 }
 
 https://api.localhost {
-	tls internal
+	tls /etc/caddy/certs/dev/reqstly-dev.crt /etc/caddy/certs/dev/reqstly-dev.key
 	reverse_proxy backend:3000
 
 	log {
@@ -13,7 +13,7 @@ https://api.localhost {
 }
 
 https://supabase.localhost {
-	tls internal
+	tls /etc/caddy/certs/dev/reqstly-dev.crt /etc/caddy/certs/dev/reqstly-dev.key
 
 	handle /health {
 		header {
@@ -34,7 +34,7 @@ https://supabase.localhost {
 }
 
 https://localhost {
-	tls internal
+	tls /etc/caddy/certs/dev/reqstly-dev.crt /etc/caddy/certs/dev/reqstly-dev.key
 	handle /health {
 		header {
 			X-Service "caddy"
@@ -44,6 +44,6 @@ https://localhost {
 	}
 
 	handle {
-		respond `{"service":"reqstly-infra","status":"ok"}` 200
+		reverse_proxy frontend:3000
 	}
 }
