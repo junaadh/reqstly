@@ -51,7 +51,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Starting Supabase auth gateway services for CORS regression check..."
-"${compose_cmd[@]}" up -d kong auth >/dev/null
+"${compose_cmd[@]}" up -d --no-deps db analytics auth kong >/dev/null
 
 request_headers() {
   local method="$1"
@@ -96,7 +96,7 @@ wait_for_auth_gateway() {
 
   echo "Auth gateway did not become ready within ${AUTH_CORS_WAIT_TIMEOUT_VALUE}s."
   "${compose_cmd[@]}" ps || true
-  "${compose_cmd[@]}" logs --tail 120 auth kong vector analytics db || true
+  "${compose_cmd[@]}" logs --tail 120 auth kong analytics db || true
   exit 1
 }
 
