@@ -170,7 +170,8 @@ async fn patch_me_emits_profile_patch_to_same_user_connections() {
     let (_conn_b, mut user_rx_b) = ctx.realtime_hub.register(ctx.user_id).await;
 
     let other_user_id = Uuid::new_v4();
-    let (_other_conn, mut other_rx) = ctx.realtime_hub.register(other_user_id).await;
+    let (_other_conn, mut other_rx) =
+        ctx.realtime_hub.register(other_user_id).await;
 
     let (status, payload) = send_json(
         &ctx.app,

@@ -68,6 +68,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare CI env
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" FORCE=1 ROTATE_KEYS=1 ./scripts/setup-dev.sh
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -83,7 +86,7 @@ jobs:
         run: cargo install cargo-llvm-cov --locked
 
       - name: Backend tests (unit + integration + coverage)
-        run: ./scripts/test-backend.sh
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" ./scripts/test-backend.sh
 
   auth-cors-regression:
     runs-on: ubuntu-latest
@@ -91,8 +94,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare CI env
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" FORCE=1 ROTATE_KEYS=1 ./scripts/setup-dev.sh
+
       - name: Auth CORS regression check
-        run: AUTH_CORS_BASE_URL=http://127.0.0.1:8000 ./scripts/test-auth-cors.sh
+        run: AUTH_CORS_BASE_URL=http://127.0.0.1:8000 ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" AUTH_CORS_CLEANUP=true ./scripts/test-auth-cors.sh
 
   frontend-check:
     runs-on: ubuntu-latest
