@@ -13,6 +13,7 @@ tower-http = { version = "0.5", features = ["cors", "trace", "request-id"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+axum-prometheus = "0.6"
 thiserror = "2"
 config = "0.14"
 uuid = { version = "1", features = ["v4", "serde"] }

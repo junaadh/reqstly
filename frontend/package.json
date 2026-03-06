@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"dev:docker": "vite dev --force --host 0.0.0.0 --port 3000",
+		"dev:docker": "vite dev --host 0.0.0.0 --port 3000",
 		"build": "svelte-kit sync && vite build",
 		"start": "node build",
 		"preview": "vite preview",

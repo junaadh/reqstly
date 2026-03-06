@@ -13,7 +13,9 @@ use axum::{
     http::{HeaderValue, Method},
     routing::get,
 };
+use axum_prometheus::PrometheusMetricLayer;
 use sqlx::PgPool;
+use std::sync::{Arc, OnceLock};
 use tower_http::{
     cors::{Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -22,6 +24,11 @@ use tower_http::{
     },
 };
 use tracing::Level;
+
+type MetricsRenderer = Arc<dyn Fn() -> String + Send + Sync>;
+
+static METRICS: OnceLock<(PrometheusMetricLayer<'static>, MetricsRenderer)> =
+    OnceLock::new();
 
 #[derive(Clone)]
 pub struct AppState {
@@ -36,6 +43,14 @@ pub fn build_app(
     state: AppState,
     allowed_origin: &str,
 ) -> Result<Router, error::AppError> {
+    let (metrics_layer, metrics_renderer) = METRICS
+        .get_or_init(|| {
+            let (layer, handle) = PrometheusMetricLayer::pair();
+            let renderer: MetricsRenderer = Arc::new(move || handle.render());
+            (layer, renderer)
+        })
+        .clone();
+
     let cors_layer = if allowed_origin == "*" {
         CorsLayer::new()
             .allow_origin(Any)
@@ -66,8 +81,16 @@ pub fn build_app(
 
     Ok(Router::new()
         .route("/health", get(api::health))
+        .route(
+            "/metrics",
+            get(move || {
+                let metrics_renderer = metrics_renderer.clone();
+                async move { (metrics_renderer)() }
+            }),
+        )
         .route("/ws", get(api::ws))
         .nest("/api/v1", api::router())
+        .layer(metrics_layer)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request| {

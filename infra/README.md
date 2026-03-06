@@ -5,6 +5,8 @@ Infrastructure is split into:
 - Reqstly overlays:
   - `infra/docker-compose.dev.yml`
   - `infra/docker-compose.yml`
+- Observability configs and Grafana provisioning:
+  - `infra/observability/`
 - Caddy reverse proxy configs in `infra/proxy/caddy/`
 
 ## Compose Model
@@ -29,6 +31,12 @@ Reqstly overlay services include:
 - `migrate`
 - `caddy`
 - `redis`
+- `prometheus`
+- `loki`
+- `promtail`
+- `grafana`
+- `postgres-exporter`
+- `redis-exporter`
 
 ## Environment
 
@@ -44,6 +52,13 @@ Key canonical Supabase vars:
 - `SUPABASE_PUBLIC_URL`
 - `API_EXTERNAL_URL`
 - `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_PORT`
+
+Key observability vars:
+- `PROMETHEUS_PORT`
+- `LOKI_PORT`
+- `GRAFANA_PORT`
+- `GRAFANA_ADMIN_USER`
+- `GRAFANA_ADMIN_PASSWORD`
 
 ## Local Flow
 
@@ -63,7 +78,11 @@ set -a; source .env.local; set +a
 ./scripts/smoke-check.sh
 ```
 
-4. Stop stack:
+4. Open observability UIs:
+- Grafana: `http://127.0.0.1:${GRAFANA_PORT:-3001}`
+- Prometheus: `http://127.0.0.1:${PROMETHEUS_PORT:-9090}`
+
+5. Stop stack:
 ```bash
 docker compose --env-file .env.local \
   -f infra/supabase/docker-compose.yml \
@@ -77,3 +96,5 @@ docker compose --env-file .env.local \
 - `supabase.localhost` routes to Supabase `kong` through Caddy.
 - Backend uses `DATABASE_URL` semantics for `sqlx` migration and runtime DB access.
 - `scripts/setup-dev.sh` is the default local bootstrap entrypoint. It creates `.env.local` and local TLS certs.
+- Grafana dashboard provisioning lives under `infra/observability/grafana/`.
+- Prometheus alert rules reference [docs/OBSERVABILITY_RUNBOOK.md](../docs/OBSERVABILITY_RUNBOOK.md).

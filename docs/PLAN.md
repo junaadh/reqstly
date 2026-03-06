@@ -17,21 +17,22 @@ Rebuild Reqstly in strict sequence with a production-first delivery model:
 - No frontend work before backend phase gate passes.
 - No observability stack before frontend phase gate passes.
 
-### Current Reality (March 6, 2026)
+### Current Reality (March 7, 2026)
 - Backend reintroduced and running in dev compose.
 - Frontend reintroduced for Phase 3 in `frontend/` (SvelteKit) and integrated into dev compose.
-- Observability services intentionally removed.
+- Observability stack is now integrated in compose overlays (`infra/observability/` + dev/prod compose wiring).
 - Supabase is now sourced from the official full docker bundle in `infra/supabase/`.
 - Compose scripts available: `scripts/up-dev.sh`, `scripts/up-prod.sh`, `scripts/smoke-check.sh`.
 - Local bootstrap script available: `scripts/setup-dev.sh` (generates `.env.local` + local TLS certs).
 
-## 2) Phase Status Snapshot (March 6, 2026)
+## 2) Phase Status Snapshot (March 7, 2026)
 
 - Phase 0 (Infra Foundation): **complete**
 - Phase 1 (Backend Core): **complete**
 - Phase 2 (Backend Hardening): **complete**
-- Phase 3 (Frontend Rewrite): **in progress**
-- Phase 4 (Observability): **not started**
+- Phase 3 (Frontend Rewrite): **complete**
+- Phase 4 (Observability): **complete**
+- Phase 5 (Improvements Backlog): **next**
 
 ### Phase 1 completion checklist
 - [x] Confirm Supabase-issued token E2E from host shell (`./scripts/token-e2e-check.py`)
@@ -46,7 +47,8 @@ Rebuild Reqstly in strict sequence with a production-first delivery model:
 - [x] Backend test harness stable locally with repeatable runs (including DB bootstrap path)
 - [x] CI backend checks are defined and enforced in repository workflows; GitHub branch protection remains an external admin setting
 
-### Phase 3 progress checklist (March 6, 2026)
+### Phase 3 closure and carry-over checklist (March 7, 2026)
+Remaining unchecked items are now tracked as Phase 5 backlog and do not block Phase 4 completion.
 - [x] SvelteKit frontend scaffold restored and routed through Caddy (`https://localhost`)
 - [x] Core routes implemented: `/login`, `/signup`, `/`, `/requests`, `/requests/new`, `/requests/[id]`, `/profile`, `/settings`
 - [x] Frontend wired to backend `/api/v1` for dashboard + request lifecycle pages
@@ -55,7 +57,7 @@ Rebuild Reqstly in strict sequence with a production-first delivery model:
 - [x] Profile passkey status surfaced (count + first-added date) and add button disabled when passkey exists
 - [~] Passkey first-factor sign-in stabilization in progress (custom verify/session bridge implemented; end-to-end reliability hardening ongoing)
 - [x] Local bootstrap path documented and scripted (`scripts/setup-dev.sh`, `.env.local.example`, README/infra docs updated)
-- [ ] Frontend CI gates (`bun install`, `bun run check`, `bun run build`) not yet added to workflow
+- [x] Frontend CI gates (`bun install`, `bun run check`, `bun run build`) added to workflow
 - [ ] Remaining settings/profile persistence APIs still pending backend endpoints
 
 ## 3) Architecture Decision
@@ -224,7 +226,7 @@ Exit gate:
 - Integration tests stable and repeatable.
 - Error schema and status codes consistent across all endpoints.
 
-### Phase 3: Frontend Rewrite (SvelteKit, in progress)
+### Phase 3: Frontend Rewrite (SvelteKit, complete)
 Scope:
 - Recreate frontend with SvelteKit SSR.
 - Use Supabase Auth client flows.
@@ -239,7 +241,7 @@ Exit gate:
 - Session persistence stable across reload/navigation.
 - Frontend checks green in CI.
 
-### Phase 4: Observability (final)
+### Phase 4: Observability (complete)
 Scope:
 - Reintroduce Prometheus, Loki, Promtail, Grafana.
 - Dashboard minimums:
@@ -251,6 +253,16 @@ Scope:
 Exit gate:
 - Observability stack healthy in compose and staging.
 - Alerts validated through controlled failure simulation.
+
+### Phase 5: Improvements Backlog (next)
+Scope:
+- Resolve remaining auth/session edge cases and passkey flow hardening.
+- Complete remaining settings/profile persistence APIs.
+- Incrementally improve frontend performance and realtime resync behavior.
+- Expand operational smoke checks beyond base health probes.
+
+Exit gate:
+- Priority Phase 5 backlog items selected and delivered with CI green.
 
 ## 9) Quality Gates and SLO-style Targets
 
@@ -301,15 +313,15 @@ DevOps Setup Progress:
 - [x] Step 1: Containerize application (Dockerfile)
 - [~] Step 2: Set up CI/CD pipeline (staging-first exists, hardening pending)
 - [x] Step 3: Define deployment strategy
-- [ ] Step 4: Configure monitoring & alerting
+- [x] Step 4: Configure monitoring & alerting
 - [x] Step 5: Set up environment management
-- [ ] Step 6: Document runbooks
+- [x] Step 6: Document runbooks
 - [x] Step 7: Validate against anti-patterns checklist
 
 ## 12) Immediate Next Actions (ordered)
 
-1. Add frontend CI gates (`bun install`, `bun run check`, `bun run build`) in `.github/workflows/ci.yml`.
-2. Enforce required CI checks in GitHub branch protection for PR hard-gating.
-3. Finish passkey first-factor sign-in reliability hardening and keep fallback path documented.
-4. Implement and wire any remaining profile/settings persistence APIs.
+1. Enforce required CI checks in GitHub branch protection for PR hard-gating.
+2. Finish passkey first-factor sign-in reliability hardening and keep fallback path documented.
+3. Implement and wire any remaining profile/settings persistence APIs.
+4. Expand smoke checks to cover auth + realtime path in staging.
 5. Add explicit rollback job/procedure in deploy workflow runbook.

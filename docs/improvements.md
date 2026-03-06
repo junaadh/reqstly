@@ -1,26 +1,28 @@
-# Reqstly Improvements Before Phase 3 Close
+# Reqstly Phase 5 Improvements Backlog
 
 ## Purpose
-This document captures high-impact improvements and additional features to finish Phase 3 cleanly and reduce carry-over risk into Phase 4.
+This document captures high-impact improvements and additional features to drive Phase 5 after Phase 4 completion.
 
 Scope assumptions:
 - Backend, frontend, DB, API, security, and deployment hardening are in scope.
-- Observability stack rollout itself remains Phase 4, but Phase-3-ready hooks are included.
+- Observability stack baseline is complete; follow-up hardening and product improvements continue here.
 
 ## Current Snapshot
 - Backend `/api/v1` + websocket `/ws` are implemented.
 - Participant visibility model exists via `app.request_participants`.
 - Frontend routes and realtime patching are in place.
 - Passkey + email/password + Microsoft flows are integrated.
-- CI currently enforces backend checks; frontend checks are still missing.
+- CI now enforces backend and frontend checks.
 - Root onboarding docs are now aligned with current frontend status and local setup flow.
 
-## Priority 0: Must Complete Before Declaring Phase 3 Done
+## Priority 0: Next Execution Batch for Phase 5
+
+Completed baseline items (already done):
+- Frontend CI gates (`bun install`, `bun run check`, `bun run build`)
+- README/PLAN/infra docs alignment for active stack and phases
 
 | ID | Area | Improvement | Why | Acceptance Criteria |
 |---|---|---|---|---|
-| P0-01 | CI/CD | Add frontend gates to CI (`bun install`, `bun run check`, `bun run build`) | Prevent frontend regressions on PRs and branch pushes | CI fails on broken Svelte/TypeScript/build; green baseline on `rewrite/sveltekit` |
-| P0-02 | Docs | Update `README.md` to reflect actual state (frontend present, phase status current) | Avoid operational confusion and incorrect onboarding | README matches `docs/PLAN.md` and active compose commands |
 | P0-03 | Auth | Stabilize session-expired flow and refresh behavior end-to-end | Current redirect/refresh path has been fragile under CORS/session drift | `?reason=session-expired` recovery works without manual storage cleanup across Safari/Chromium |
 | P0-04 | Security | Add regression test for auth CORS headers (`/auth/v1/token`, `/auth/v1/user`) | Prevent wildcard CORS regressions on credentialed requests | Automated test asserts explicit origin + `allow-credentials=true` |
 | P0-05 | API | Implement `PATCH /api/v1/me` for profile persistence | Profile Save currently depends on auth metadata update path only | Display name update goes through backend API and is reflected in `/api/v1/me` |
@@ -30,7 +32,7 @@ Scope assumptions:
 | P0-09 | Realtime+Tests | Add integration tests for assign/delete/status patch fanout | Collaboration correctness is critical and historically error-prone | Tests prove owner/assignee/participant visibility and live update behavior |
 | P0-10 | UX/A11Y | Resolve remaining accessibility gaps in auth/list/detail screens | Phase close should include baseline usability quality | Keyboard nav and ARIA checks pass for comboboxes, dialogs, and action menus |
 
-## Priority 1: High-Value Improvements to Pull Into Late Phase 3
+## Priority 1: High-Value Phase 5 Follow-ups
 
 | ID | Area | Improvement | Why | Acceptance Criteria |
 |---|---|---|---|---|
@@ -61,13 +63,13 @@ Scope assumptions:
 1. Ship all `P0` items first and re-run full CI + smoke.
 2. Pull `P1-01`, `P1-04`, `P1-05`, `P1-10` next for stability.
 3. Pull the remaining `P1` items based on capacity.
-4. Start `P2` only after Phase 3 exit gate is formally met.
+4. Start `P2` only after the Phase 5 exit gate is formally met.
 
-## Phase 3 Exit Definition (Proposed)
+## Phase 5 Exit Definition (Proposed)
 
-Phase 3 can be marked complete when all are true:
+Phase 5 can be marked complete when all are true:
 
-1. `P0-01` through `P0-10` are done and merged.
+1. `P0-03` through `P0-10` are done and merged.
 2. CI is green on backend and frontend checks.
 3. Staging deploy + smoke pass on the same commit.
 4. `docs/frontend_functionality.md`, `docs/PLAN.md`, and `README.md` are consistent.

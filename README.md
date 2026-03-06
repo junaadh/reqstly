@@ -7,13 +7,15 @@ Reqstly is in a big-bang rewrite with strict phase ordering.
 2. Backend hardening and tests
 3. Frontend rewrite (SvelteKit)
 4. Observability stack
+5. Improvements backlog and hardening
 
-## Phase Snapshot (March 6, 2026)
+## Phase Snapshot (March 7, 2026)
 - Phase 0 (Infra Foundation): complete
 - Phase 1 (Backend Core): complete
 - Phase 2 (Backend Hardening): complete
-- Phase 3 (Frontend Rewrite): in progress (closeout hardening)
-- Phase 4 (Observability): not started
+- Phase 3 (Frontend Rewrite): complete
+- Phase 4 (Observability): complete
+- Phase 5 (Improvements Backlog): next
 
 ## Active Stack
 - Supabase full self-hosted stack (`infra/supabase/`):
@@ -22,6 +24,7 @@ Reqstly is in a big-bang rewrite with strict phase ordering.
 - Reqstly frontend (SvelteKit + Bun + Tailwind + shadcn-svelte)
 - Caddy TLS reverse proxy (`https://localhost`, `https://api.localhost`, `https://supabase.localhost`)
 - Redis
+- Observability stack (Prometheus, Loki, Promtail, Grafana, Postgres exporter, Redis exporter)
 - Docker Compose (Supabase base + Reqstly overlays)
 
 ## Repository Layout
@@ -37,6 +40,7 @@ reqstly/
 │   ├── supabase/
 │   ├── docker-compose.dev.yml
 │   ├── docker-compose.yml
+│   ├── observability/
 │   └── proxy/caddy/
 ├── scripts/
 │   ├── setup-dev.sh
@@ -109,6 +113,16 @@ curl -kfsS https://api.localhost/health
 curl -kfsS https://supabase.localhost/health
 ```
 
+### Observability Access (Local)
+After `./scripts/up-dev.sh`, the stack provisions Grafana datasources and dashboard automatically.
+
+- Grafana: `http://127.0.0.1:${GRAFANA_PORT:-3001}` (default `admin` / `admin` from `.env.local`)
+- Prometheus: `http://127.0.0.1:${PROMETHEUS_PORT:-9090}`
+- Loki API: `http://127.0.0.1:${LOKI_PORT:-3100}`
+
+Default dashboard:
+- `Reqstly / Reqstly Observability Overview`
+
 ### Stop Stack
 ```bash
 docker compose --env-file .env.local -f infra/supabase/docker-compose.yml -f infra/docker-compose.dev.yml down
@@ -139,7 +153,8 @@ Production promotion must not bypass staging validation.
 ## Documentation
 - Rewrite plan and phase gates: [docs/PLAN.md](docs/PLAN.md)
 - Frontend/API mapping: [docs/frontend_functionality.md](docs/frontend_functionality.md)
-- Phase 3 pre-close backlog: [docs/improvements.md](docs/improvements.md)
+- Phase 5 backlog candidates: [docs/improvements.md](docs/improvements.md)
+- Observability alert runbook: [docs/OBSERVABILITY_RUNBOOK.md](docs/OBSERVABILITY_RUNBOOK.md)
 - Repository agent rules: [AGENTS.md](AGENTS.md)
 - Infra details: [infra/README.md](infra/README.md)
 

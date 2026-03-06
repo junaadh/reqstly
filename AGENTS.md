@@ -9,12 +9,14 @@ Current goal:
 - Rebuild backend first (depends on Supabase DB + Supabase Auth)
 - Harden backend tests
 - Build frontend after backend is stable
-- Add observability stack at the end
+- Integrate observability stack
+- Execute Phase 5 improvements backlog after observability gate
 
 Current active infrastructure:
 - Supabase full self-hosted stack from `infra/supabase/`
 - Caddy (TLS/reverse proxy)
 - Redis
+- Prometheus + Loki + Promtail + Grafana
 - Docker Compose (Supabase base + Reqstly overlays)
 - VPS deploy via GitHub Actions
 
@@ -23,16 +25,16 @@ Source of planning truth:
 
 ## Current Repo State
 - `backend/` is reintroduced and is the active implementation focus.
-- `frontend/` is intentionally removed during rewrite reset.
+- `frontend/` is reintroduced (SvelteKit) and active.
 - `infra/supabase/` is vendored from upstream for full-stack self-hosted Supabase.
-- Observability services/configs are intentionally removed for now.
+- `infra/observability/` is reintroduced and wired through compose overlays.
 
 Do not reintroduce legacy codepaths unless explicitly requested.
 
 ## Priority Rules
 1. Follow `docs/PLAN.md` phase order strictly.
 2. Do not start frontend work before backend gates pass.
-3. Do not add Prometheus/Loki/Grafana until observability phase.
+3. Keep observability baseline healthy; avoid removing Prometheus/Loki/Grafana integration without explicit request.
 4. Keep big-bang direction; no legacy compatibility layer unless requested.
 
 ## Package Manager Policy (Important)
