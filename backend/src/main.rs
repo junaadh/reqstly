@@ -1,6 +1,6 @@
 use dotenvy::dotenv;
 use reqstly_backend::{
-    AppState, build_app, config::Settings, db, error, telemetry,
+    AppState, build_app, config::Settings, db, error, realtime, telemetry,
 };
 use std::net::SocketAddr;
 use tracing::Instrument;
@@ -41,6 +41,10 @@ async fn run() -> Result<(), error::AppError> {
             db,
             jwt_secret: settings.jwt.secret,
             jwt_issuer: issuer,
+            realtime_hub: realtime::RealtimeHub::new(),
+            ws_allowed_origins: realtime::parse_allowed_origins(
+                &settings.cors.allowed_origin,
+            ),
         };
 
         let app = build_app(state, &settings.cors.allowed_origin)?;

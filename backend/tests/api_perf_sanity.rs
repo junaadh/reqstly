@@ -105,6 +105,7 @@ async fn hot_path_indexes_exist() {
         "idx_requests_owner_user_category_created_at",
         "idx_requests_owner_user_priority_created_at",
         "idx_request_audit_logs_request_id_created_at",
+        "idx_request_participants_user_request",
     ] {
         assert!(
             indexes.contains(expected),

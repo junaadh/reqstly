@@ -22,6 +22,11 @@ pub fn authenticate(
     jwt_secret: &str,
     expected_issuer: &str,
 ) -> Result<AuthUser, AppError> {
+    let token = extract_bearer_token(headers)?;
+    authenticate_token(token, jwt_secret, expected_issuer)
+}
+
+pub fn extract_bearer_token(headers: &HeaderMap) -> Result<&str, AppError> {
     let authorization = headers
         .get(header::AUTHORIZATION)
         .ok_or_else(|| {
@@ -32,10 +37,16 @@ pub fn authenticate(
             AppError::Unauthorized("invalid Authorization header".to_string())
         })?;
 
-    let token = authorization.strip_prefix("Bearer ").ok_or_else(|| {
+    authorization.strip_prefix("Bearer ").ok_or_else(|| {
         AppError::Unauthorized("expected Bearer token".to_string())
-    })?;
+    })
+}
 
+pub fn authenticate_token(
+    token: &str,
+    jwt_secret: &str,
+    expected_issuer: &str,
+) -> Result<AuthUser, AppError> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_issuer(&[expected_issuer]);
     validation.set_audience(&["authenticated"]);

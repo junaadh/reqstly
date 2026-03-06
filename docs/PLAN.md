@@ -17,19 +17,20 @@ Rebuild Reqstly in strict sequence with a production-first delivery model:
 - No frontend work before backend phase gate passes.
 - No observability stack before frontend phase gate passes.
 
-### Current Reality (March 3, 2026)
+### Current Reality (March 6, 2026)
 - Backend reintroduced and running in dev compose.
-- Frontend intentionally removed.
+- Frontend reintroduced for Phase 3 in `frontend/` (SvelteKit) and integrated into dev compose.
 - Observability services intentionally removed.
 - Supabase is now sourced from the official full docker bundle in `infra/supabase/`.
 - Compose scripts available: `scripts/up-dev.sh`, `scripts/up-prod.sh`, `scripts/smoke-check.sh`.
+- Local bootstrap script available: `scripts/setup-dev.sh` (generates `.env.local` + local TLS certs).
 
-## 2) Phase Status Snapshot (March 5, 2026)
+## 2) Phase Status Snapshot (March 6, 2026)
 
 - Phase 0 (Infra Foundation): **complete**
 - Phase 1 (Backend Core): **complete**
 - Phase 2 (Backend Hardening): **complete**
-- Phase 3 (Frontend Rewrite): **not started**
+- Phase 3 (Frontend Rewrite): **in progress**
 - Phase 4 (Observability): **not started**
 
 ### Phase 1 completion checklist
@@ -44,6 +45,18 @@ Rebuild Reqstly in strict sequence with a production-first delivery model:
 - [x] Performance sanity checks for bounds and indexes
 - [x] Backend test harness stable locally with repeatable runs (including DB bootstrap path)
 - [x] CI backend checks are defined and enforced in repository workflows; GitHub branch protection remains an external admin setting
+
+### Phase 3 progress checklist (March 6, 2026)
+- [x] SvelteKit frontend scaffold restored and routed through Caddy (`https://localhost`)
+- [x] Core routes implemented: `/login`, `/signup`, `/`, `/requests`, `/requests/new`, `/requests/[id]`, `/profile`, `/settings`
+- [x] Frontend wired to backend `/api/v1` for dashboard + request lifecycle pages
+- [x] Supabase auth wired for email/password and Azure OAuth initiation
+- [x] Passkey enrollment integrated via Supabase MFA (`/auth/v1/factors/*`)
+- [x] Profile passkey status surfaced (count + first-added date) and add button disabled when passkey exists
+- [~] Passkey first-factor sign-in stabilization in progress (custom verify/session bridge implemented; end-to-end reliability hardening ongoing)
+- [x] Local bootstrap path documented and scripted (`scripts/setup-dev.sh`, `.env.local.example`, README/infra docs updated)
+- [ ] Frontend CI gates (`bun install`, `bun run check`, `bun run build`) not yet added to workflow
+- [ ] Remaining settings/profile persistence APIs still pending backend endpoints
 
 ## 3) Architecture Decision
 
@@ -211,7 +224,7 @@ Exit gate:
 - Integration tests stable and repeatable.
 - Error schema and status codes consistent across all endpoints.
 
-### Phase 3: Frontend Rewrite (SvelteKit)
+### Phase 3: Frontend Rewrite (SvelteKit, in progress)
 Scope:
 - Recreate frontend with SvelteKit SSR.
 - Use Supabase Auth client flows.
@@ -295,7 +308,8 @@ DevOps Setup Progress:
 
 ## 12) Immediate Next Actions (ordered)
 
-1. Enforce required CI checks in GitHub branch protection for PR hard-gating.
-2. Add explicit rollback job/procedure in deploy workflow runbook.
-3. Define Phase 3 frontend API consumption contract tests before SvelteKit build-out.
-4. Start frontend only after backend hardening gate is green.
+1. Add frontend CI gates (`bun install`, `bun run check`, `bun run build`) in `.github/workflows/ci.yml`.
+2. Enforce required CI checks in GitHub branch protection for PR hard-gating.
+3. Finish passkey first-factor sign-in reliability hardening and keep fallback path documented.
+4. Implement and wire any remaining profile/settings persistence APIs.
+5. Add explicit rollback job/procedure in deploy workflow runbook.

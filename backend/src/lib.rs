@@ -3,6 +3,7 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod realtime;
 pub mod response;
 pub mod telemetry;
 
@@ -27,6 +28,8 @@ pub struct AppState {
     pub db: PgPool,
     pub jwt_secret: String,
     pub jwt_issuer: String,
+    pub realtime_hub: realtime::RealtimeHub,
+    pub ws_allowed_origins: Vec<String>,
 }
 
 pub fn build_app(
@@ -63,6 +66,7 @@ pub fn build_app(
 
     Ok(Router::new()
         .route("/health", get(api::health))
+        .route("/ws", get(api::ws))
         .nest("/api/v1", api::router())
         .layer(
             TraceLayer::new_for_http()

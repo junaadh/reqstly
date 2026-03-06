@@ -22,7 +22,7 @@ if [[ -n "${SELECTED_ENV_FILE}" ]]; then
 fi
 
 if [[ "${BACKEND_BOOTSTRAP_DB:-true}" == "true" ]]; then
-  "${ROOT_DIR}/scripts/up-dev.sh" db >/dev/null
+  COMPOSE_NO_DEPS=1 "${ROOT_DIR}/scripts/up-dev.sh" db >/dev/null
 fi
 
 TEST_DATABASE_HOST="${TEST_DATABASE_HOST:-127.0.0.1}"

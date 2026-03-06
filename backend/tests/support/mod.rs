@@ -64,6 +64,8 @@ impl TestContext {
                 db: pool.clone(),
                 jwt_secret: TEST_JWT_SECRET.to_string(),
                 jwt_issuer: TEST_JWT_ISSUER.to_string(),
+                realtime_hub: reqstly_backend::realtime::RealtimeHub::new(),
+                ws_allowed_origins: vec!["*".to_string()],
             },
             "*",
         )

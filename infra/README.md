@@ -47,18 +47,23 @@ Key canonical Supabase vars:
 
 ## Local Flow
 
-1. Start stack:
+1. Bootstrap local env + certs:
+```bash
+./scripts/setup-dev.sh
+```
+
+2. Start stack:
 ```bash
 ./scripts/up-dev.sh
 ```
 
-2. Run smoke checks:
+3. Run smoke checks:
 ```bash
 set -a; source .env.local; set +a
 ./scripts/smoke-check.sh
 ```
 
-3. Stop stack:
+4. Stop stack:
 ```bash
 docker compose --env-file .env.local \
   -f infra/supabase/docker-compose.yml \
@@ -71,3 +76,4 @@ docker compose --env-file .env.local \
 - `api.localhost` routes to Reqstly backend through Caddy.
 - `supabase.localhost` routes to Supabase `kong` through Caddy.
 - Backend uses `DATABASE_URL` semantics for `sqlx` migration and runtime DB access.
+- `scripts/setup-dev.sh` is the default local bootstrap entrypoint. It creates `.env.local` and local TLS certs.

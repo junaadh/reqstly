@@ -63,6 +63,39 @@ async fn unauthorized_and_not_found_errors_match_contract() {
     assert_eq!(unauth_status, StatusCode::UNAUTHORIZED);
     assert_error_envelope(&unauth_payload, "UNAUTHORIZED");
 
+    let (unauth_patch_status, unauth_patch_payload) = send_json(
+        &ctx.app,
+        Method::PATCH,
+        "/api/v1/me",
+        None,
+        Some(serde_json::json!({
+            "display_name": "blocked"
+        })),
+    )
+    .await;
+    assert_eq!(unauth_patch_status, StatusCode::UNAUTHORIZED);
+    assert_error_envelope(&unauth_patch_payload, "UNAUTHORIZED");
+
+    let (preferences_unauth_status, preferences_unauth_payload) =
+        send_json(&ctx.app, Method::GET, "/api/v1/preferences", None, None)
+            .await;
+    assert_eq!(preferences_unauth_status, StatusCode::UNAUTHORIZED);
+    assert_error_envelope(&preferences_unauth_payload, "UNAUTHORIZED");
+
+    let (preferences_patch_unauth_status, preferences_patch_unauth_payload) =
+        send_json(
+            &ctx.app,
+            Method::PATCH,
+            "/api/v1/preferences",
+            None,
+            Some(serde_json::json!({
+                "default_page_size": 50
+            })),
+        )
+        .await;
+    assert_eq!(preferences_patch_unauth_status, StatusCode::UNAUTHORIZED);
+    assert_error_envelope(&preferences_patch_unauth_payload, "UNAUTHORIZED");
+
     let missing_id = Uuid::new_v4();
     let path = format!("/api/v1/requests/{missing_id}");
     let (missing_status, missing_payload) =
