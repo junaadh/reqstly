@@ -151,6 +151,20 @@ function extractTokens(payload: unknown): { accessToken: string; refreshToken: s
   return { accessToken, refreshToken };
 }
 
+function isLikelyJwtToken(value: string): boolean {
+  return value.split('.').length === 3;
+}
+
+async function clearLocalSupabaseSession(client: SupabaseClient): Promise<void> {
+  try {
+    await client.auth.signOut({ scope: 'local' });
+  } catch (error) {
+    logWarn('auth.passkeys', 'Unable to clear local Supabase session state', {
+      details: debugErrorDetails(error)
+    });
+  }
+}
+
 async function applySupabaseSession(
   client: SupabaseClient,
   tokens: { accessToken: string; refreshToken: string }
@@ -208,6 +222,14 @@ export async function signInWithPasskey(client: SupabaseClient): Promise<string>
     throw new Error('Passkey verification succeeded but no session tokens were returned.');
   }
 
+  if (isLikelyJwtToken(tokens.refreshToken)) {
+    // App-issued passkey JWTs are valid as bearer access tokens but not as Supabase refresh tokens.
+    logInfo('auth.passkeys', 'Passkey flow returned app-issued token pair; using cookie auth mode');
+    await clearLocalSupabaseSession(client);
+    setAccessTokenCookie(tokens.accessToken);
+    return tokens.accessToken;
+  }
+
   try {
     const session = await applySupabaseSession(client, tokens);
     logInfo('auth.passkeys', 'Passkey sign-in completed with Supabase session');
@@ -217,6 +239,7 @@ export async function signInWithPasskey(client: SupabaseClient): Promise<string>
     logInfo('auth.passkeys', 'Supabase setSession failed; falling back to cookie token', {
       error: debugErrorDetails(error)
     });
+    await clearLocalSupabaseSession(client);
     setAccessTokenCookie(tokens.accessToken);
     return tokens.accessToken;
   }
@@ -304,20 +327,41 @@ export async function enrollPasskeyFactor(
   return applySupabaseSession(client, tokens);
 }
 
-export async function listPasskeyFactors(client: SupabaseClient): Promise<PasskeyFactor[]> {
+export async function listPasskeyFactors(client?: SupabaseClient): Promise<PasskeyFactor[]> {
   logDebug('auth.passkeys', 'Listing passkey factors');
-  const { data, error } = (await client.auth.mfa.listFactors()) as {
-    data: MfaListFactorsPayload | null;
-    error: Error | null;
-  };
+  if (client) {
+    const { data, error } = (await client.auth.mfa.listFactors()) as {
+      data: MfaListFactorsPayload | null;
+      error: Error | null;
+    };
 
-  if (error) {
-    logWarn('auth.passkeys', 'Failed to list passkey factors', {
-      message: error.message
-    });
-    throw error;
+    if (!error) {
+      const all = Array.isArray(data?.all) ? data.all : [];
+      return all.filter((factor) => factor.factor_type === 'webauthn');
+    }
+
+    if (!/auth session missing/i.test(error.message)) {
+      logWarn('auth.passkeys', 'Failed to list passkey factors', {
+        message: error.message
+      });
+      throw error;
+    }
+
+    logInfo(
+      'auth.passkeys',
+      'Supabase session missing while listing factors; falling back to app passkey endpoint'
+    );
   }
 
-  const all = Array.isArray(data?.all) ? data.all : [];
-  return all.filter((factor) => factor.factor_type === 'webauthn');
+  const payload = await appRequest<{ factors?: PasskeyFactor[] } | PasskeyFactor[]>(
+    '/auth/webauthn/factors',
+    { method: 'GET' }
+  );
+  const factors = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.factors)
+      ? payload.factors
+      : [];
+
+  return factors.filter((factor) => factor.factor_type === 'webauthn');
 }

@@ -79,12 +79,12 @@ services:
           "CMD",
           "bun",
           "-e",
-          "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+          "fetch('http://127.0.0.1:3000/', { redirect: 'manual' }).then((r) => process.exit((r.status >= 200 && r.status < 400) ? 0 : 1)).catch(() => process.exit(1))"
         ]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 10
-      start_period: 15s
+      start_period: 45s
     environment:
       NODE_ENV: development
       HOST: 0.0.0.0
@@ -94,6 +94,9 @@ services:
       VITE_USE_POLLING: "true"
       VITE_POLLING_INTERVAL: "300"
       ORIGIN: ${APP_URL:-https://localhost}
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      PORT_HEADER: x-forwarded-port
       PUBLIC_API_BASE_URL: ${API_URL:-https://api.localhost}
       PRIVATE_API_BASE_URL: ${PRIVATE_API_BASE_URL:-http://backend:3000}
       PRIVATE_SUPABASE_URL: ${PRIVATE_SUPABASE_URL:-http://kong:8000}

@@ -1,42 +1,40 @@
-# sv
+# Reqstly Frontend (SvelteKit)
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+This directory contains the Phase 3 frontend rewrite for Reqstly.
 
-## Creating a project
+## Stack
+- SvelteKit + TypeScript
+- Bun package manager/runtime
+- Tailwind CSS
+- shadcn-svelte UI primitives
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Local Development
 
-```sh
-# create a new project
-npx sv create my-app
+From repository root:
+```bash
+./scripts/setup-dev.sh
+./scripts/up-dev.sh
 ```
 
-To recreate this project with the same configuration:
+The frontend is served through Caddy at:
+- `https://localhost`
 
-```sh
-# recreate this project
-bun x sv@0.12.5 create --template minimal --types ts --install bun frontend
+Backend API goes through:
+- `https://api.localhost`
+
+Supabase gateway goes through:
+- `https://supabase.localhost`
+
+## Common Commands
+
+Inside `frontend/`:
+```bash
+bun install --frozen-lockfile
+bun run dev
+bun run check
+bun run build
 ```
 
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+## Notes
+- In docker dev mode, frontend source and `node_modules` are mounted for auto-reload.
+- Auth supports email/password, Microsoft OAuth, and passkey flows (with backend bridge endpoints for local behavior).

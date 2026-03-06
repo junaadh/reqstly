@@ -11,12 +11,20 @@
   import { clearClientAuthState } from '$lib/auth/session';
   import { enrollPasskeyFactor, listPasskeyFactors, type PasskeyFactor } from '$lib/auth/passkeys';
   import { logInfo, logWarn } from '$lib/debug';
+  import { subscribeRealtimeEvents } from '$lib/realtime/ws';
+  import type { RealtimeServerEvent } from '$lib/realtime/types';
   import { getSupabaseClient } from '$lib/supabase/client';
+  import type { ApiEnvelope, ApiErrorEnvelope, MeProfile } from '$lib/types';
 
   import type { PageData } from './$types';
 
   let { data } = $props<{ data: PageData }>();
 
+  let liveDisplayName = $state<string | null>(null);
+  const me = $derived.by<MeProfile>(() => ({
+    ...data.me,
+    display_name: liveDisplayName ?? data.me.display_name
+  }));
   let displayName = $state('');
   let signOutOpen = $state(false);
   let signingOut = $state(false);
@@ -57,23 +65,31 @@
   });
 
   $effect(() => {
-    displayName = data.me.display_name;
+    if (!savingProfile) {
+      displayName = me.display_name;
+    }
   });
 
-  async function refreshPasskeyStatus(): Promise<void> {
-    const client = getSupabaseClient();
-    if (!client) {
-      passkeyStatusLoading = false;
-      passkeyStatusError =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
+  function handleRealtimeEvent(event: RealtimeServerEvent): void {
+    if (event.type !== 'profile.patch') {
       return;
     }
 
+    const nextUser = event.payload.user;
+    if (nextUser.id !== me.id) {
+      return;
+    }
+
+    liveDisplayName = nextUser.display_name;
+  }
+
+  async function refreshPasskeyStatus(): Promise<void> {
     passkeyStatusLoading = true;
     passkeyStatusError = '';
 
     try {
-      const factors = await listPasskeyFactors(client);
+      const client = getSupabaseClient();
+      const factors = await listPasskeyFactors(client ?? undefined);
       passkeyFactors = factors;
       logInfo('profile.passkeys', 'Loaded passkey factors', {
         count: factors.length
@@ -139,30 +155,50 @@
       return;
     }
 
-    if (nextName === data.me.display_name) {
+    if (nextName === me.display_name) {
       profileMessage = 'No changes to save.';
-      return;
-    }
-
-    const client = getSupabaseClient();
-    if (!client) {
-      profileError =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
       return;
     }
 
     savingProfile = true;
     try {
-      const { error } = await client.auth.updateUser({
-        data: {
+      const response = await fetch('/api/me', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
           display_name: nextName
-        }
+        })
       });
 
-      if (error) {
-        throw error;
+      const payload = (await response.json().catch(() => null)) as
+        | ApiEnvelope<MeProfile>
+        | ApiErrorEnvelope
+        | null;
+
+      if (!response.ok) {
+        const message =
+          payload && 'error' in payload && typeof payload.error?.message === 'string'
+            ? payload.error.message
+            : 'Failed to save profile.';
+
+        if (response.status === 401) {
+          await goto('/login?reason=session-expired');
+          return;
+        }
+
+        profileError = message;
+        return;
       }
 
+      if (!payload || !('data' in payload) || typeof payload.data.display_name !== 'string') {
+        profileError = 'Unexpected profile update response.';
+        return;
+      }
+
+      liveDisplayName = payload.data.display_name;
+      displayName = payload.data.display_name;
       profileMessage = 'Display name saved. Refreshing profile context...';
       await goto('/profile', { invalidateAll: true });
     } catch (error) {
@@ -173,18 +209,23 @@
   }
 
   onMount(() => {
+    const unsubscribeEvents = subscribeRealtimeEvents(handleRealtimeEvent);
     void refreshPasskeyStatus();
+
+    return () => {
+      unsubscribeEvents();
+    };
   });
 </script>
 
-<section class="mx-auto grid max-w-3xl gap-3">
+<section class="grid gap-4">
   <Card class="surface-gradient border">
     <CardHeader>
       <CardTitle>Profile</CardTitle>
       <CardDescription>Manage your account identity shown across requests and audits.</CardDescription>
     </CardHeader>
 
-    <CardContent class="grid gap-4">
+    <CardContent class="grid gap-4 p-4 sm:p-5 lg:p-6">
       <div class="grid gap-2">
         <Label for="display_name">Display name</Label>
         <Input id="display_name" bind:value={displayName} />
@@ -197,14 +238,14 @@
         {/if}
       </div>
 
-      <div class="grid gap-2 md:grid-cols-2">
+      <div class="grid gap-2 lg:grid-cols-2">
         <div class="grid gap-2">
           <Label>Email</Label>
-          <Input value={data.me.email} disabled />
+          <Input value={me.email} disabled />
         </div>
         <div class="grid gap-2">
           <Label>User ID</Label>
-          <Input value={data.me.id} disabled class="font-mono text-xs" />
+          <Input value={me.id} disabled class="font-mono text-xs" />
         </div>
       </div>
 
@@ -243,7 +284,7 @@
             {passkeyStatusError}
           </p>
         {:else}
-          <dl class="mt-3 grid gap-2 rounded-lg border border-border/80 bg-background/70 p-3 sm:grid-cols-2">
+          <dl class="mt-3 grid gap-2 rounded-lg border border-border/80 bg-background/70 p-3 md:grid-cols-2">
             <div>
               <dt class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Verified passkeys</dt>
               <dd class="mt-1 text-sm font-semibold text-foreground">{passkeyCount}</dd>
@@ -271,11 +312,11 @@
         {/if}
       </div>
 
-      <div class="flex flex-wrap justify-end gap-2">
-        <Button variant="outline" onclick={saveProfile} disabled={savingProfile}>
+      <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button variant="outline" onclick={saveProfile} disabled={savingProfile} class="w-full sm:w-auto">
           {savingProfile ? 'Saving...' : 'Save changes'}
         </Button>
-        <Button variant="destructive" onclick={() => (signOutOpen = true)}>Sign out</Button>
+        <Button variant="destructive" onclick={() => (signOutOpen = true)} class="w-full sm:w-auto">Sign out</Button>
       </div>
     </CardContent>
   </Card>

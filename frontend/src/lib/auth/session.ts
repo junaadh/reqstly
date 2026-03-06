@@ -1,14 +1,31 @@
 export const ACCESS_TOKEN_COOKIE = 'reqstly_access_token';
 
+function deleteCookieVariants(): void {
+  const variants = [
+    'Path=/; SameSite=Lax',
+    'Path=/; SameSite=Lax; Secure',
+    'Path=/; SameSite=Lax; Domain=localhost',
+    'Path=/; SameSite=Lax; Domain=localhost; Secure'
+  ];
+
+  for (const suffix of variants) {
+    document.cookie = `${ACCESS_TOKEN_COOKIE}=; Max-Age=0; ${suffix}`;
+  }
+}
+
 export function setAccessTokenCookie(token: string): void {
   if (typeof document === 'undefined') return;
-  document.cookie = `${ACCESS_TOKEN_COOKIE}=${encodeURIComponent(token)}; Max-Age=3600; Path=/; SameSite=Lax`;
+  const encoded = encodeURIComponent(token);
+  deleteCookieVariants();
+  document.cookie = `${ACCESS_TOKEN_COOKIE}=${encoded}; Max-Age=3600; Path=/; SameSite=Lax`;
+  if (window.location.protocol === 'https:') {
+    document.cookie = `${ACCESS_TOKEN_COOKIE}=${encoded}; Max-Age=3600; Path=/; SameSite=Lax; Secure`;
+  }
 }
 
 export function clearAccessTokenCookie(): void {
   if (typeof document === 'undefined') return;
-  document.cookie = `${ACCESS_TOKEN_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
-  document.cookie = `${ACCESS_TOKEN_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
+  deleteCookieVariants();
 }
 
 function clearStorageAuthKeys(storage: Storage): void {

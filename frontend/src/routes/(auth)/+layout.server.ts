@@ -1,9 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
-import { ACCESS_TOKEN_COOKIE } from '$lib/auth/session';
+import { getAccessTokenFromCookies } from '$lib/server/auth-cookie';
 
 export const load: LayoutServerLoad = async ({ cookies }) => {
-  const token = cookies.get(ACCESS_TOKEN_COOKIE);
+  const token = getAccessTokenFromCookies(cookies);
   if (token) {
     throw redirect(303, '/');
   }

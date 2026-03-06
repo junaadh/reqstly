@@ -80,6 +80,9 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       ORIGIN: ${APP_URL}
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      PORT_HEADER: x-forwarded-port
       PUBLIC_API_BASE_URL: ${API_URL}
       PRIVATE_API_BASE_URL: ${PRIVATE_API_BASE_URL:-http://backend:3000}
       PRIVATE_SUPABASE_URL: ${PRIVATE_SUPABASE_URL:-http://kong:8000}

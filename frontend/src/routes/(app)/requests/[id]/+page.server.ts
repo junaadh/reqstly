@@ -2,17 +2,26 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 import { asApiError, callBackend } from '$lib/server/backend';
-import { ACCESS_TOKEN_COOKIE } from '$lib/auth/session';
-import type { ApiEnvelope, ApiListEnvelope, AuditLog, RequestEnums, SupportRequest } from '$lib/types';
+import { getAccessTokenFromCookies } from '$lib/server/auth-cookie';
+import type {
+  ApiEnvelope,
+  ApiListEnvelope,
+  AssigneeSuggestion,
+  AuditLog,
+  RequestEnums,
+  SupportRequest
+} from '$lib/types';
 
-export const load: PageServerLoad = async ({ fetch, params, parent }) => {
+export const load: PageServerLoad = async ({ fetch, params, parent, depends }) => {
   const { token } = await parent();
   const requestId = params.id;
+  depends(`reqstly:requests:detail:${requestId}`);
 
-  const [requestResponse, auditResponse, enumResponse] = await Promise.all([
+  const [requestResponse, auditResponse, enumResponse, assigneeResponse] = await Promise.all([
     callBackend(fetch, token, `/requests/${requestId}`),
     callBackend(fetch, token, `/requests/${requestId}/audit`),
-    callBackend(fetch, token, '/meta/enums')
+    callBackend(fetch, token, '/meta/enums'),
+    callBackend(fetch, token, '/assignees/suggestions?limit=100')
   ]);
 
   if (!requestResponse.ok || !requestResponse.json || typeof requestResponse.json !== 'object') {
@@ -35,16 +44,22 @@ export const load: PageServerLoad = async ({ fetch, params, parent }) => {
           priority: ['low', 'medium', 'high']
         };
 
+  const assigneeOptions =
+    assigneeResponse.ok && assigneeResponse.json && typeof assigneeResponse.json === 'object'
+      ? (assigneeResponse.json as ApiEnvelope<AssigneeSuggestion[]>).data
+      : [];
+
   return {
     request: requestPayload,
     audit: auditPayload,
-    enums: enumPayload
+    enums: enumPayload,
+    assigneeOptions
   };
 };
 
 export const actions: Actions = {
   update: async ({ cookies, fetch, params, request }) => {
-    const token = cookies.get(ACCESS_TOKEN_COOKIE);
+    const token = getAccessTokenFromCookies(cookies);
     if (!token) {
       throw redirect(303, '/login?reason=session-expired');
     }
@@ -56,7 +71,8 @@ export const actions: Actions = {
       description: String(form.get('description') ?? '').trim() || null,
       category: String(form.get('category') ?? ''),
       status: String(form.get('status') ?? ''),
-      priority: String(form.get('priority') ?? '')
+      priority: String(form.get('priority') ?? ''),
+      assignee_email: String(form.get('assignee_email') ?? '').trim()
     };
 
     const updateResponse = await callBackend(fetch, token, `/requests/${requestId}`, {
@@ -83,7 +99,7 @@ export const actions: Actions = {
   },
 
   delete: async ({ cookies, fetch, params }) => {
-    const token = cookies.get(ACCESS_TOKEN_COOKIE);
+    const token = getAccessTokenFromCookies(cookies);
     if (!token) {
       throw redirect(303, '/login?reason=session-expired');
     }

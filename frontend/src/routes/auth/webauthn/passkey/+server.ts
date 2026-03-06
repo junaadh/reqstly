@@ -1,13 +1,18 @@
 import { json } from '@sveltejs/kit';
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
 
+import { isSecureOrigin, resolveRequestHostname, resolveRequestOrigin } from '$lib/server/request-origin';
+
 import type { RequestHandler } from './$types';
 
 const CHALLENGE_COOKIE = 'reqstly_webauthn_challenge';
 
-export const POST: RequestHandler = async ({ cookies, url }) => {
+export const POST: RequestHandler = async ({ request, cookies, url }) => {
+  const requestOrigin = resolveRequestOrigin(request, url.origin);
+  const rpID = resolveRequestHostname(request, url.origin);
+
   const options = await generateAuthenticationOptions({
-    rpID: url.hostname,
+    rpID,
     userVerification: 'preferred',
     allowCredentials: []
   });
@@ -16,7 +21,7 @@ export const POST: RequestHandler = async ({ cookies, url }) => {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: url.protocol === 'https:',
+    secure: isSecureOrigin(requestOrigin),
     maxAge: 300
   });
 

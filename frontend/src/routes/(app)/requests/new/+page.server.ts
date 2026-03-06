@@ -2,12 +2,15 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 import { asApiError, callBackend } from '$lib/server/backend';
-import { ACCESS_TOKEN_COOKIE } from '$lib/auth/session';
-import type { ApiEnvelope, RequestEnums, SupportRequest } from '$lib/types';
+import { getAccessTokenFromCookies } from '$lib/server/auth-cookie';
+import type { ApiEnvelope, AssigneeSuggestion, RequestEnums, SupportRequest } from '$lib/types';
 
 export const load: PageServerLoad = async ({ fetch, parent }) => {
   const { token } = await parent();
-  const enumResponse = await callBackend(fetch, token, '/meta/enums');
+  const [enumResponse, assigneeResponse] = await Promise.all([
+    callBackend(fetch, token, '/meta/enums'),
+    callBackend(fetch, token, '/assignees/suggestions?limit=100')
+  ]);
 
   const payload =
     enumResponse.ok && enumResponse.json && typeof enumResponse.json === 'object'
@@ -18,14 +21,20 @@ export const load: PageServerLoad = async ({ fetch, parent }) => {
           priority: ['low', 'medium', 'high']
         };
 
+  const assigneeOptions =
+    assigneeResponse.ok && assigneeResponse.json && typeof assigneeResponse.json === 'object'
+      ? (assigneeResponse.json as ApiEnvelope<AssigneeSuggestion[]>).data
+      : [];
+
   return {
-    enums: payload
+    enums: payload,
+    assigneeOptions
   };
 };
 
 export const actions: Actions = {
   default: async ({ cookies, fetch, request }) => {
-    const token = cookies.get(ACCESS_TOKEN_COOKIE);
+    const token = getAccessTokenFromCookies(cookies);
     if (!token) {
       throw redirect(303, '/login?reason=session-expired');
     }
@@ -35,7 +44,8 @@ export const actions: Actions = {
       title: String(form.get('title') ?? '').trim(),
       description: String(form.get('description') ?? '').trim() || null,
       category: String(form.get('category') ?? ''),
-      priority: String(form.get('priority') ?? '')
+      priority: String(form.get('priority') ?? ''),
+      assignee_email: String(form.get('assignee_email') ?? '').trim() || null
     };
 
     const createResponse = await callBackend(fetch, token, '/requests', {

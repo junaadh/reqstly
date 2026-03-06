@@ -6,6 +6,7 @@
 
   import { clearClientAuthState } from '$lib/auth/session';
   import { Button } from '$lib/components/ui/button';
+  import { realtimeConnectionState, stopRealtime } from '$lib/realtime/ws';
   import { getSupabaseClient } from '$lib/supabase/client';
   import type { MeProfile } from '$lib/types';
   import { cn } from '$lib/utils';
@@ -53,6 +54,7 @@
     } catch (error) {
       console.error('Sign out failed', error);
     } finally {
+      stopRealtime();
       clearClientAuthState();
       signingOut = false;
       mobileNavOpen = false;
@@ -62,7 +64,7 @@
 </script>
 
 <div class="min-h-dvh bg-background">
-  <div class="mx-auto grid min-h-dvh w-full max-w-[1480px] lg:grid-cols-[264px_1fr]">
+  <div class="grid min-h-dvh w-full lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
     <aside class="hidden border-r border-sidebar-border/75 bg-sidebar lg:flex lg:flex-col lg:px-4 lg:py-5">
       <a class="flex items-center gap-3 rounded-xl border border-sidebar-border/80 bg-background px-3 py-3" href="/">
         <div class="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground font-heading text-lg font-bold">
@@ -117,7 +119,7 @@
 
     <section class="flex min-w-0 flex-col">
       <header class="sticky top-0 z-40 border-b border-border/80 bg-background/95 backdrop-blur-md">
-        <div class="flex h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <div class="flex min-h-16 items-center justify-between gap-2 px-3 sm:px-5 lg:px-8">
           <div class="flex min-w-0 items-center gap-3">
             <Button
               type="button"
@@ -131,22 +133,38 @@
             </Button>
 
             <div class="min-w-0">
-              <h1 class="truncate font-heading text-xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
-              <p class="truncate text-xs text-muted-foreground">Welcome back, {user.display_name}</p>
+              <h1 class="truncate font-heading text-lg font-semibold tracking-tight text-foreground sm:text-xl">{pageTitle}</h1>
+              <p class="hidden truncate text-xs text-muted-foreground sm:block">Welcome back, {user.display_name}</p>
             </div>
           </div>
 
-          <div class="flex items-center gap-2">
-            <Button href="/requests/new" size="sm" class="h-11">
+          <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <span
+              class={cn(
+                'hidden items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold uppercase tracking-wide md:inline-flex',
+                $realtimeConnectionState === 'connected'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+              )}
+            >
+              <span
+                class={cn(
+                  'size-1.5 rounded-full',
+                  $realtimeConnectionState === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'
+                )}
+              ></span>
+              {$realtimeConnectionState === 'connected' ? 'Live' : 'Syncing'}
+            </span>
+            <Button href="/requests/new" size="sm" class="hidden h-11 sm:inline-flex">
               <Plus class="size-4" />
               New Request
             </Button>
-            <Button type="button" variant="outline" size="icon" class="size-11" aria-label="Notifications">
+            <Button type="button" variant="outline" size="icon" class="size-10 sm:size-11" aria-label="Notifications">
               <Bell class="size-4" />
             </Button>
             <a
               href="/profile"
-              class="grid size-11 place-items-center rounded-full border border-border bg-card text-xs font-bold text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              class="grid size-10 place-items-center rounded-full border border-border bg-card text-xs font-bold text-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:size-11"
               aria-label="Open profile"
             >
               {initials}
@@ -155,7 +173,7 @@
         </div>
 
         {#if mobileNavOpen}
-          <div class="border-t border-border/70 bg-background px-4 py-3 lg:hidden">
+          <div class="border-t border-border/70 bg-background px-3 py-3 sm:px-4 lg:hidden">
             <nav class="grid gap-1" aria-label="Mobile navigation">
               {#each nav as item}
                 <a
@@ -188,7 +206,7 @@
         {/if}
       </header>
 
-      <main class="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+      <main class="flex-1 px-3 py-5 sm:px-5 lg:px-8">
         {@render children()}
       </main>
     </section>

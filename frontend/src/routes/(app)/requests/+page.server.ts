@@ -8,7 +8,9 @@ const allowedStatus = new Set(['open', 'in_progress', 'resolved']);
 const allowedCategory = new Set(['IT', 'Ops', 'Admin', 'HR']);
 const allowedPriority = new Set(['low', 'medium', 'high']);
 
-export const load: PageServerLoad = async ({ fetch, parent, url }) => {
+export const load: PageServerLoad = async ({ fetch, parent, url, depends }) => {
+  depends('reqstly:requests:list');
+
   const { token } = await parent();
 
   const status = url.searchParams.get('status') ?? '';
@@ -27,6 +29,7 @@ export const load: PageServerLoad = async ({ fetch, parent, url }) => {
   if (allowedStatus.has(status)) params.set('status', status);
   if (allowedCategory.has(category)) params.set('category', category);
   if (allowedPriority.has(priority)) params.set('priority', priority);
+  if (q.trim().length > 0) params.set('q', q.trim());
 
   const [listResponse, enumResponse] = await Promise.all([
     callBackend(fetch, token, `/requests?${params.toString()}`),

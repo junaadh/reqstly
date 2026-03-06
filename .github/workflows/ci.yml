@@ -84,3 +84,35 @@ jobs:
 
       - name: Backend tests (unit + integration + coverage)
         run: ./scripts/test-backend.sh
+
+  auth-cors-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth CORS regression check
+        run: AUTH_CORS_BASE_URL=http://127.0.0.1:8000 ./scripts/test-auth-cors.sh
+
+  frontend-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.23
+
+      - name: Install frontend deps
+        run: bun install --frozen-lockfile
+
+      - name: Frontend type/check
+        run: bun run check
+
+      - name: Frontend build
+        run: bun run build

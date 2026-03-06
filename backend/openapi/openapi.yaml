@@ -149,6 +149,17 @@ components:
         priority:
           type: string
           enum: [low, medium, high]
+        assignee_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        assignee_email:
+          type: string
+          format: email
+          nullable: true
+        assignee_display_name:
+          type: string
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -177,6 +188,9 @@ components:
         actor_user_id:
           type: string
           format: uuid
+        actor_email:
+          type: string
+          format: email
         action:
           type: string
           enum: [created, updated, deleted, status_changed]
@@ -191,6 +205,7 @@ components:
         - id
         - request_id
         - actor_user_id
+        - actor_email
         - action
         - old_value
         - new_value
@@ -207,6 +222,10 @@ components:
           type: string
           nullable: true
           maxLength: 5000
+        assignee_email:
+          type: string
+          format: email
+          nullable: true
         category:
           type: string
           enum: [IT, Ops, Admin, HR]
@@ -214,6 +233,22 @@ components:
           type: string
           enum: [low, medium, high]
       required: [title, category, priority]
+
+    AssigneeSuggestion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        assignment_count:
+          type: integer
+          minimum: 0
+      required: [id, email, display_name, assignment_count]
 
     UpdateRequestInput:
       type: object
@@ -235,6 +270,42 @@ components:
         priority:
           type: string
           enum: [low, medium, high]
+        assignee_email:
+          type: string
+          format: email
+          nullable: true
+
+    UpdateMeInput:
+      type: object
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required: [display_name]
+
+    PreferencesPayload:
+      type: object
+      properties:
+        email_digest:
+          type: boolean
+        browser_alerts:
+          type: boolean
+        default_page_size:
+          type: integer
+          enum: [10, 20, 50, 100]
+      required: [email_digest, browser_alerts, default_page_size]
+
+    UpdatePreferencesInput:
+      type: object
+      properties:
+        email_digest:
+          type: boolean
+        browser_alerts:
+          type: boolean
+        default_page_size:
+          type: integer
+          enum: [10, 20, 50, 100]
 
     HealthResponse:
       type: object
@@ -250,6 +321,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/MePayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    PreferencesResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PreferencesPayload'
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]
@@ -290,6 +370,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditLog'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    AssigneeSuggestionsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssigneeSuggestion'
         meta:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]
@@ -335,6 +426,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      summary: Update current authenticated user profile metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeInput'
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/preferences:
+    get:
+      summary: Get current authenticated user preferences
+      responses:
+        '200':
+          description: User preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      summary: Update current authenticated user preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePreferencesInput'
+      responses:
+        '200':
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /api/v1/meta/enums:
     get:
@@ -348,9 +510,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/EnumsResponse'
 
+  /api/v1/assignees/suggestions:
+    get:
+      summary: Suggest assignees from current user's email domain
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Optional search term for email or display name.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Same-domain assignee suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssigneeSuggestionsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/v1/requests:
     get:
-      summary: List current user's requests
+      summary: List requests where current user is a participant
       parameters:
         - in: query
           name: status
@@ -367,6 +559,11 @@ paths:
           schema:
             type: string
             enum: [low, medium, high]
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Optional tokenized search across request text fields and assignee identity.
         - in: query
           name: sort
           schema:
@@ -443,7 +640,7 @@ paths:
           format: uuid
 
     get:
-      summary: Get a single owned request
+      summary: Get a single visible request
       responses:
         '200':
           description: Request found
@@ -465,7 +662,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
     patch:
-      summary: Update an owned request
+      summary: Update request when current user is owner or current assignee
       requestBody:
         required: true
         content:
@@ -525,7 +722,7 @@ paths:
           type: string
           format: uuid
     get:
-      summary: Get audit log for an owned request
+      summary: Get audit log for a visible request
       responses:
         '200':
           description: Audit entries

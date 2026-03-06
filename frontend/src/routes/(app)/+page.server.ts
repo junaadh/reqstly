@@ -18,7 +18,9 @@ async function fetchStatusTotal(
   return payload.meta?.total ?? 0;
 }
 
-export const load: PageServerLoad = async ({ fetch, parent }) => {
+export const load: PageServerLoad = async ({ fetch, parent, depends }) => {
+  depends('reqstly:dashboard');
+
   const { token } = await parent();
 
   const [openTotal, inProgressTotal, resolvedTotal, recentResponse] = await Promise.all([

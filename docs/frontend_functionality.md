@@ -71,6 +71,7 @@ Features:
 - Welcome panel and quick actions.
 - Stat cards for open/in-progress/resolved counts.
 - Recent activity list.
+- Live websocket patch updates for create/assign/status/delete changes.
 
 API contracts:
 - route: `/api/v1/me`
@@ -112,18 +113,21 @@ API contracts:
 
 Features:
 - Requests table.
+- Assignee column (name/email or unassigned).
 - Filter controls (status/category/priority).
 - Sort control.
 - Pagination controls.
-- Quick search (currently client-side on fetched page).
+- Server-side `q` search (tokenized) across title, description, category, status, priority, and assignee text.
+- Accessible action menu semantics on desktop rows (`menu` / `menuitem`).
+- Live websocket patch updates (no invalidate/refetch).
 
 API contracts:
-- route: `/api/v1/requests?page=<n>&limit=<n>&sort=<sort>&status=<status>&category=<category>&priority=<priority>`
+- route: `/api/v1/requests?page=<n>&limit=<n>&sort=<sort>&status=<status>&category=<category>&priority=<priority>&q=<term>`
 - is protected: `yes`
-- purpose: Fetch request list with server-side filtering/sort/pagination.
+- purpose: Fetch request list with server-side filtering/sort/pagination/search.
 - response: `ApiListEnvelope<SupportRequest>`
 - https method: `GET`
-- other: `q` search is currently UI-only; backend search not yet wired.
+- other: `q` is split on whitespace; all terms must match at least one searchable field.
 
 - route: `/api/v1/meta/enums`
 - is protected: `yes`
@@ -132,12 +136,12 @@ API contracts:
 - https method: `GET`
 - other: Fallback values are present in UI if this fails.
 
-- route: `/api/v1/requests?q=<term>` (planned)
+- route: `/api/v1/assignees/suggestions?limit=100&q=<term>`
 - is protected: `yes`
-- purpose: Server-side search by title/description/category/status.
-- response: `ApiListEnvelope<SupportRequest>`
+- purpose: Suggest assignable users scoped to the signed-in user email domain.
+- response: `ApiEnvelope<AssigneeSuggestion[]>`
 - https method: `GET`
-- other: Missing currently; recommended for true large-list search.
+- other: Ordered by `assignment_count` desc (popular first), then email; supports tokenized narrowing via `q`.
 
 ## 6) Requests Empty State View (`/requests`, empty data state)
 
@@ -157,6 +161,10 @@ API contracts:
 
 Features:
 - Title, description, category, priority inputs.
+- Assignee email combobox with same-domain auto-suggestions (click opens full list).
+- Manual assignee email entry for users outside same-domain suggestions.
+- Live narrowing of suggestions as input text changes (add/delete words).
+- Keyboard combobox support (`ArrowUp/ArrowDown`, `Enter`, `Escape`) with ARIA active descendant and listbox roles.
 - Context/help text.
 - Submit and cancel actions.
 
@@ -173,7 +181,7 @@ API contracts:
 - purpose: Create a new request record.
 - response: `ApiEnvelope<SupportRequest>` (new request)
 - https method: `POST`
-- other: Redirects to `/requests/{id}` on success.
+- other: Supports optional `assignee_email`; resolves to `assignee_user_id` when user exists.
 
 ## 8) Request Form Validation Errors (`/requests/new`, error state)
 
@@ -196,6 +204,9 @@ Features:
 - Request metadata and editable form.
 - Save changes action.
 - Audit timeline panel.
+- Editable assignee email with same-domain suggestions and manual override.
+- Keyboard combobox support (`ArrowUp/ArrowDown`, `Enter`, `Escape`) with ARIA active descendant and listbox roles.
+- Live websocket updates for request patches, audit append, and delete redirect handling.
 
 API contracts:
 - route: `/api/v1/requests/{id}`
@@ -224,7 +235,59 @@ API contracts:
 - purpose: Save edits to existing request.
 - response: `ApiEnvelope<SupportRequest>`
 - https method: `PATCH`
-- other: Validation failures return `ApiErrorEnvelope`.
+- other: `assignee_email` accepted; empty string clears assignment, unknown email returns validation error.
+
+## 16) Realtime Transport (`/ws`)
+
+Features:
+- Per-user authenticated websocket stream from Rust backend.
+- No full-page invalidate/refetch for request mutations.
+- Event-driven UI patching for dashboard stats/recent list, requests list, and request detail/audit timeline.
+- Deterministic reconnect resync: active page invalidates only its own dependency key (`dashboard`, `requests:list`, `requests:detail:{id}`).
+- Connection status indicator in app shell (`Live` / `Syncing`).
+
+API contracts:
+- route: `/ws?token=<supabase_access_token>` (or `Authorization: Bearer <token>`)
+- is protected: `yes`
+- purpose: Open authenticated realtime stream for request domain events.
+- response: WebSocket upgrade + JSON event envelopes.
+- https method: `GET` (WebSocket upgrade)
+- other: Origin is validated against backend allowlist; messages are versioned (`v: 1`).
+
+- route: `WS event type: request.created`
+- is protected: `yes` (server-side recipient filtering by request participants)
+- purpose: Notify clients about newly visible request.
+- response: `{ request: SupportRequest }`
+- https method: `push event`
+- other: Used on initial create and on assignment-driven visibility changes so newly added participants get a deterministic insert/count update.
+
+- route: `WS event type: request.patch`
+- is protected: `yes`
+- purpose: Notify clients about assignment/status/field changes.
+- response: `{ request: SupportRequest, changed_fields: string[], previous_status: string }`
+- https method: `push event`
+- other: Emitted to already-visible participants for deterministic patching and status counter deltas.
+
+- route: `WS event type: request.deleted`
+- is protected: `yes`
+- purpose: Notify clients to remove deleted request from local UI state.
+- response: `{ id: string, status: string }`
+- https method: `push event`
+- other: Detail page navigates away when active request is deleted.
+
+- route: `WS event type: audit.append`
+- is protected: `yes`
+- purpose: Append new audit timeline item without refetch.
+- response: `{ audit: AuditLog }`
+- https method: `push event`
+- other: Detail timeline prepends newest event and caps retained history on client.
+
+- route: `WS event type: sync.required`
+- is protected: `yes`
+- purpose: Signal client to run targeted dependency invalidation for the active view when server requests resync.
+- response: `{}`
+- https method: `push event`
+- other: Client also triggers the same targeted resync after websocket reconnect.
 
 ## 10) Delete Request Confirmation Modal (`/requests/[id]`, modal state)
 
@@ -246,7 +309,7 @@ Features:
 - Display name field (editable in UI).
 - Read-only email and user ID.
 - Add passkey action (WebAuthn MFA enrollment).
-- Save changes button currently disabled.
+- Save changes persists profile display name through backend API.
 
 API contracts:
 - route: `/api/v1/me`
@@ -256,12 +319,12 @@ API contracts:
 - https method: `GET`
 - other: Implemented now.
 
-- route: `/api/v1/me` (planned)
+- route: `/api/v1/me`
 - is protected: `yes`
 - purpose: Update display name/profile metadata.
 - response: `ApiEnvelope<MeProfile>`
 - https method: `PATCH`
-- other: Missing currently; required to enable Save Changes.
+- other: Validation requires non-empty `display_name` and max length 120.
 
 - route: `SUPABASE /auth/v1/factors`
 - is protected: `yes`
@@ -303,22 +366,22 @@ API contracts:
 Features:
 - Notification toggles.
 - Default page size setting.
-- Save button currently disabled (frontend-only state).
+- Save preferences persists settings server-side per authenticated user.
 
 API contracts:
-- route: `/api/v1/preferences` (planned)
+- route: `/api/v1/preferences`
 - is protected: `yes`
 - purpose: Fetch user workspace preferences.
 - response: `ApiEnvelope<{ email_digest:boolean; browser_alerts:boolean; default_page_size:number }>`
 - https method: `GET`
-- other: Missing currently.
+- other: Returns defaults on first access (`email_digest=true`, `browser_alerts=true`, `default_page_size=20`).
 
-- route: `/api/v1/preferences` (planned)
+- route: `/api/v1/preferences`
 - is protected: `yes`
 - purpose: Persist updated user preferences.
 - response: `ApiEnvelope<{ ...updated preferences... }>`
 - https method: `PATCH`
-- other: Missing currently; required to enable Save Preferences.
+- other: `default_page_size` must be one of `10`, `20`, `50`, `100`.
 
 ## 14) Reqstly Sign Up Screen (`/signup`)
 

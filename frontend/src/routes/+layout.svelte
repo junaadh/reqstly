@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import favicon from '$lib/assets/favicon.svg';
   import { clearClientAuthState, readAccessTokenCookie, setAccessTokenCookie } from '$lib/auth/session';
   import { debugErrorDetails, logError, logInfo, logWarn } from '$lib/debug';
+  import { startRealtime, stopRealtime } from '$lib/realtime/ws';
   import { getSupabaseClient } from '$lib/supabase/client';
   import type { Snippet } from 'svelte';
   import '../app.css';
@@ -15,6 +17,38 @@
       normalized.includes('user from sub claim in jwt does not exist') ||
       (normalized.includes('sub claim') && normalized.includes('does not exist'))
     );
+  }
+
+  function isAuthRoute(pathname: string): boolean {
+    return pathname === '/login' || pathname === '/signup';
+  }
+
+  async function clearLocalAuthSession(client: ReturnType<typeof getSupabaseClient>): Promise<void> {
+    if (client) {
+      try {
+        await client.auth.signOut({ scope: 'local' });
+      } catch (error) {
+        logWarn('app.auth', 'Local Supabase sign-out cleanup failed', {
+          details: debugErrorDetails(error)
+        });
+      }
+    }
+
+    stopRealtime();
+    clearClientAuthState();
+  }
+
+  async function recoverFromSessionFailure(
+    client: ReturnType<typeof getSupabaseClient>,
+    reason: string
+  ): Promise<void> {
+    logWarn('app.auth', 'Recovering from session failure', { reason });
+    await clearLocalAuthSession(client);
+
+    if (typeof window === 'undefined') return;
+    if (!isAuthRoute(window.location.pathname)) {
+      await goto('/login?reason=session-expired', { replaceState: true });
+    }
   }
 
   onMount(() => {
@@ -53,29 +87,41 @@
     }
 
     void (async () => {
-      const {
-        data: { session }
-      } = await client.auth.getSession();
+      try {
+        const {
+          data: { session }
+        } = await client.auth.getSession();
 
-      if (session?.access_token) {
-        logInfo('app.auth', 'Session found on mount');
-        const { error: userError } = await client.auth.getUser();
-        if (userError) {
-          logWarn('app.auth', 'Session user validation failed', { error: userError.message });
-          if (isMissingJwtUserError(userError.message)) {
-            await client.auth.signOut();
+        if (session?.access_token) {
+          logInfo('app.auth', 'Session found on mount');
+          const { error: userError } = await client.auth.getUser();
+          if (userError) {
+            logWarn('app.auth', 'Session user validation failed', { error: userError.message });
+            if (isMissingJwtUserError(userError.message)) {
+              await recoverFromSessionFailure(client, 'missing-jwt-user');
+              return;
+            }
+            await recoverFromSessionFailure(client, 'user-validation-failed');
+            return;
           }
-          clearClientAuthState();
+
+          setAccessTokenCookie(session.access_token);
+          startRealtime(session.access_token);
           return;
         }
-        setAccessTokenCookie(session.access_token);
-      } else {
+
         // Keep custom passkey JWT cookie session if Supabase JS session does not exist.
         const fallbackToken = readAccessTokenCookie();
         if (!fallbackToken) {
           logInfo('app.auth', 'No Supabase session or fallback token found; clearing client auth state');
+          stopRealtime();
           clearClientAuthState();
         }
+      } catch (error) {
+        logWarn('app.auth', 'Session bootstrap failed', {
+          details: debugErrorDetails(error)
+        });
+        await recoverFromSessionFailure(client, 'session-bootstrap-failed');
       }
     })();
 
@@ -86,13 +132,23 @@
         event: _event,
         hasAccessToken: Boolean(authSession?.access_token)
       });
+
       if (authSession?.access_token) {
         setAccessTokenCookie(authSession.access_token);
-      } else {
-        const fallbackToken = readAccessTokenCookie();
-        if (!fallbackToken) {
-          clearClientAuthState();
-        }
+        startRealtime(authSession.access_token);
+        return;
+      }
+
+      if (_event === 'SIGNED_OUT') {
+        stopRealtime();
+        clearClientAuthState();
+        return;
+      }
+
+      const fallbackToken = readAccessTokenCookie();
+      if (!fallbackToken) {
+        stopRealtime();
+        clearClientAuthState();
       }
     });
 

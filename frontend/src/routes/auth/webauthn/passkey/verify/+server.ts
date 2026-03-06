@@ -7,23 +7,11 @@ import {
   mintPasskeyTokens,
   resolveUserForCredential
 } from '$lib/server/passkey-auth';
+import { resolveRequestOrigin } from '$lib/server/request-origin';
 
 import type { RequestHandler } from './$types';
 
 const CHALLENGE_COOKIE = 'reqstly_webauthn_challenge';
-
-function resolveExpectedOrigin(request: Request, fallbackOrigin: string): string {
-  const originHeader = request.headers.get('origin')?.trim();
-  if (originHeader) return originHeader;
-
-  const forwardedHost = request.headers.get('x-forwarded-host')?.trim();
-  const forwardedProto = request.headers.get('x-forwarded-proto')?.trim();
-  if (forwardedHost && forwardedProto) {
-    return `${forwardedProto}://${forwardedHost}`;
-  }
-
-  return fallbackOrigin;
-}
 
 export const POST: RequestHandler = async ({ request, cookies, url }) => {
   try {
@@ -75,7 +63,7 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
       return json({ message: 'No verified passkey factor found for this account.' }, { status: 404 });
     }
 
-    const expectedOrigin = resolveExpectedOrigin(request, url.origin);
+    const expectedOrigin = resolveRequestOrigin(request, url.origin);
     const expectedRPID = new URL(expectedOrigin).hostname;
     for (const credential of credentials) {
       try {

@@ -11,6 +11,9 @@ export interface AdminFactor {
   id: string;
   factor_type?: string;
   status?: string;
+  friendly_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
   last_webauthn_challenge_data?: Record<string, unknown> | null;
 }
 

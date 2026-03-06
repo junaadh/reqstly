@@ -16,6 +16,7 @@
   import { Label } from '$lib/components/ui/label';
   import { clearClientAuthState, setAccessTokenCookie } from '$lib/auth/session';
   import { enrollPasskeyFactor } from '$lib/auth/passkeys';
+  import { debugErrorDetails, logWarn } from '$lib/debug';
   import { getSupabaseClient } from '$lib/supabase/client';
 
   let displayName = $state('');
@@ -149,9 +150,19 @@
     passkeyState = 'loading';
 
     try {
-      const {
-        data: { session }
-      } = await client.auth.getSession();
+      let session: Awaited<ReturnType<typeof client.auth.getSession>>['data']['session'] = null;
+      try {
+        const {
+          data: { session: currentSession }
+        } = await client.auth.getSession();
+        session = currentSession;
+      } catch (error) {
+        logWarn('auth.signup', 'Passkey signup session check failed; clearing local auth state', {
+          details: debugErrorDetails(error)
+        });
+        await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
+        clearClientAuthState();
+      }
 
       let activeSession = session;
       if (activeSession) {
@@ -268,8 +279,8 @@
     <div class="pointer-events-none absolute -bottom-24 -left-24 size-80 rounded-full bg-black/15 blur-3xl"></div>
   </aside>
 
-  <div class="flex items-center justify-center p-6 sm:p-12">
-    <div class="w-full max-w-[520px]">
+  <div class="flex items-center justify-center p-5 sm:p-8 md:p-10 lg:p-12">
+    <div class="w-full md:max-w-[680px] lg:max-w-[520px]">
       <div class="mb-8">
         <div class="mb-8 flex items-center gap-2 text-primary lg:hidden">
           <Building2 class="size-6" />
@@ -279,7 +290,7 @@
         <p class="mt-2 text-muted-foreground">Enter your details to get started with Reqstly.</p>
       </div>
 
-      <div class="rounded-2xl border border-border bg-card p-8 shadow-xl shadow-primary/5">
+      <div class="rounded-2xl border border-border bg-card p-5 shadow-xl shadow-primary/5 sm:p-8">
       {#if errorMessage}
         <div
           id="signup_error_message"
@@ -430,7 +441,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Button type="button" variant="outline" class="h-10" onclick={() => socialLogin('azure')} disabled={loading}>
           Microsoft
         </Button>

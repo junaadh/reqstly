@@ -53,14 +53,25 @@ export interface SupportRequest {
   category: RequestCategory;
   status: RequestStatus;
   priority: RequestPriority;
+  assignee_user_id: string | null;
+  assignee_email: string | null;
+  assignee_display_name: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AssigneeSuggestion {
+  id: string;
+  email: string;
+  display_name: string;
+  assignment_count: number;
 }
 
 export interface AuditLog {
   id: string;
   request_id: string;
   actor_user_id: string;
+  actor_email: string;
   action: 'created' | 'updated' | 'deleted' | 'status_changed';
   old_value: Record<string, unknown>;
   new_value: Record<string, unknown>;
@@ -71,4 +82,10 @@ export interface RequestEnums {
   status: RequestStatus[];
   category: RequestCategory[];
   priority: RequestPriority[];
+}
+
+export interface UserPreferences {
+  email_digest: boolean;
+  browser_alerts: boolean;
+  default_page_size: 10 | 20 | 50 | 100;
 }

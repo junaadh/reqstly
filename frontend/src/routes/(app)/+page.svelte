@@ -1,19 +1,26 @@
 <script lang="ts">
+  import { invalidate } from '$app/navigation';
+  import { onMount } from 'svelte';
   import { ArrowRight, Clock3, Plus, Search } from '@lucide/svelte';
 
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle
-  } from '$lib/components/ui/card';
-  import type { PageData } from './$types';
+  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+  import type { RealtimeServerEvent } from '$lib/realtime/types';
+  import { subscribeRealtimeEvents, subscribeRealtimeResync } from '$lib/realtime/ws';
+  import type { SupportRequest } from '$lib/types';
   import { cn } from '$lib/utils';
+  import type { PageData } from './$types';
 
   let { data } = $props<{ data: PageData }>();
+
+  let stats = $state({ open: 0, in_progress: 0, resolved: 0 });
+  let recentRequests = $state<SupportRequest[]>([]);
+
+  $effect(() => {
+    stats = { ...data.stats };
+    recentRequests = data.recentRequests.map((request: SupportRequest) => ({ ...request }));
+  });
 
   function formatRelative(iso: string): string {
     const date = new Date(iso);
@@ -40,6 +47,66 @@
       medium: 'border border-[#d3b170]/50 bg-[#fdf3de] text-[#8b5d12]',
       high: 'border border-[#d69580]/55 bg-[#fce9e4] text-[#8a3c2b]'
     }[priority] ?? 'border border-border bg-muted text-foreground');
+
+  function updateStatusCount(status: string, delta: number): void {
+    if (!(status in stats)) {
+      return;
+    }
+
+    const key = status as keyof typeof stats;
+    stats = {
+      ...stats,
+      [key]: Math.max(0, stats[key] + delta)
+    };
+  }
+
+  function upsertRecentRequest(request: SupportRequest): void {
+    recentRequests = [request, ...recentRequests.filter((item) => item.id !== request.id)]
+      .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
+      .slice(0, 6);
+  }
+
+  function handleRealtimeEvent(event: RealtimeServerEvent): void {
+    switch (event.type) {
+      case 'request.created': {
+        const request = event.payload.request;
+        updateStatusCount(request.status, 1);
+        upsertRecentRequest(request);
+        return;
+      }
+      case 'request.patch': {
+        const request = event.payload.request;
+        const previousStatus = event.payload.previous_status;
+
+        if (previousStatus !== request.status) {
+          updateStatusCount(previousStatus, -1);
+          updateStatusCount(request.status, 1);
+        }
+
+        upsertRecentRequest(request);
+        return;
+      }
+      case 'request.deleted': {
+        updateStatusCount(event.payload.status, -1);
+        recentRequests = recentRequests.filter((item) => item.id !== event.payload.id);
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  onMount(() => {
+    const unsubscribeEvents = subscribeRealtimeEvents(handleRealtimeEvent);
+    const unsubscribeResync = subscribeRealtimeResync(() => {
+      void invalidate('reqstly:dashboard');
+    });
+
+    return () => {
+      unsubscribeEvents();
+      unsubscribeResync();
+    };
+  });
 </script>
 
 <section class="grid gap-6">
@@ -70,7 +137,7 @@
         <CardDescription class="uppercase tracking-[0.14em]">Open Requests</CardDescription>
       </CardHeader>
       <CardContent>
-        <p class="font-heading text-4xl font-semibold leading-none">{data.stats.open}</p>
+        <p class="font-heading text-4xl font-semibold leading-none">{stats.open}</p>
       </CardContent>
     </Card>
 
@@ -79,7 +146,7 @@
         <CardDescription class="uppercase tracking-[0.14em]">In Progress</CardDescription>
       </CardHeader>
       <CardContent>
-        <p class="font-heading text-4xl font-semibold leading-none">{data.stats.in_progress}</p>
+        <p class="font-heading text-4xl font-semibold leading-none">{stats.in_progress}</p>
       </CardContent>
     </Card>
 
@@ -88,7 +155,7 @@
         <CardDescription class="uppercase tracking-[0.14em]">Closed Requests</CardDescription>
       </CardHeader>
       <CardContent>
-        <p class="font-heading text-4xl font-semibold leading-none">{data.stats.resolved}</p>
+        <p class="font-heading text-4xl font-semibold leading-none">{stats.resolved}</p>
       </CardContent>
     </Card>
   </div>
@@ -106,7 +173,7 @@
     </CardHeader>
 
     <CardContent>
-      {#if data.recentRequests.length === 0}
+      {#if recentRequests.length === 0}
         <div class="rounded-xl border border-dashed border-border/80 bg-muted/20 p-8 text-center">
           <p class="text-sm text-muted-foreground">No requests yet. Create your first request to get started.</p>
           <Button class="mt-4 h-11" href="/requests/new">
@@ -116,7 +183,7 @@
         </div>
       {:else}
         <ul class="grid gap-2" aria-live="polite">
-          {#each data.recentRequests as item, index}
+          {#each recentRequests as item, index}
             <li
               class="rounded-xl border border-border/80 bg-background px-4 py-3"
               style={`animation-delay:${index * 35}ms`}

@@ -44,6 +44,33 @@ services:
           - /auth/v1/verify
     plugins:
       - name: cors
+        config:
+          credentials: true
+          max_age: 3600
+          methods:
+            - GET
+            - HEAD
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+            - OPTIONS
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+          origins:
+            - https://localhost
+            - https://api.localhost
+            - https://supabase.localhost
+            - http://localhost
+            - http://api.localhost
+            - http://supabase.localhost
+            - https://reqstly.com
+            - https://api.reqstly.com
+            - https://supabase.reqstly.com
   - name: auth-v1-open-callback
     url: http://auth:9999/callback
     routes:
@@ -53,6 +80,33 @@ services:
           - /auth/v1/callback
     plugins:
       - name: cors
+        config:
+          credentials: true
+          max_age: 3600
+          methods:
+            - GET
+            - HEAD
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+            - OPTIONS
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+          origins:
+            - https://localhost
+            - https://api.localhost
+            - https://supabase.localhost
+            - http://localhost
+            - http://api.localhost
+            - http://supabase.localhost
+            - https://reqstly.com
+            - https://api.reqstly.com
+            - https://supabase.reqstly.com
   - name: auth-v1-open-authorize
     url: http://auth:9999/authorize
     routes:
@@ -62,6 +116,33 @@ services:
           - /auth/v1/authorize
     plugins:
       - name: cors
+        config:
+          credentials: true
+          max_age: 3600
+          methods:
+            - GET
+            - HEAD
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+            - OPTIONS
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+          origins:
+            - https://localhost
+            - https://api.localhost
+            - https://supabase.localhost
+            - http://localhost
+            - http://api.localhost
+            - http://supabase.localhost
+            - https://reqstly.com
+            - https://api.reqstly.com
+            - https://supabase.reqstly.com
 
   ## Secure Auth routes
   - name: auth-v1
@@ -74,6 +155,33 @@ services:
           - /auth/v1/
     plugins:
       - name: cors
+        config:
+          credentials: true
+          max_age: 3600
+          methods:
+            - GET
+            - HEAD
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+            - OPTIONS
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+          origins:
+            - https://localhost
+            - https://api.localhost
+            - https://supabase.localhost
+            - http://localhost
+            - http://api.localhost
+            - http://supabase.localhost
+            - https://reqstly.com
+            - https://api.reqstly.com
+            - https://supabase.reqstly.com
       - name: key-auth
         config:
           hide_credentials: false
