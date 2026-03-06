@@ -89,10 +89,10 @@ services:
       NODE_ENV: development
       HOST: 0.0.0.0
       PORT: 3000
-      CHOKIDAR_USEPOLLING: "true"
-      CHOKIDAR_INTERVAL: "300"
-      VITE_USE_POLLING: "true"
-      VITE_POLLING_INTERVAL: "300"
+      CHOKIDAR_USEPOLLING: "${CHOKIDAR_USE_POLLING:-false}"
+      CHOKIDAR_INTERVAL: "${CHOKIDAR_INTERVAL:-1000}"
+      VITE_USE_POLLING: "${VITE_USE_POLLING:-false}"
+      VITE_POLLING_INTERVAL: "${VITE_POLLING_INTERVAL:-1000}"
       ORIGIN: ${APP_URL:-https://localhost}
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
@@ -140,6 +140,89 @@ services:
       - ../proxy/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
       - ../proxy/caddy/certs/dev:/etc/caddy/certs/dev:ro
 
+  postgres-exporter:
+    container_name: postgres-exporter
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - 9187
+
+  redis-exporter:
+    container_name: redis-exporter
+    image: oliver006/redis_exporter:v1.62.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - 9121
+
+  loki:
+    container_name: loki
+    image: grafana/loki:2.9.8
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ../observability/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+
+  promtail:
+    container_name: promtail
+    image: grafana/promtail:2.9.8
+    command: ["-config.file=/etc/promtail/config.yml"]
+    depends_on:
+      loki:
+        condition: service_started
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.53.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      backend:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+      redis-exporter:
+        condition: service_started
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:11.2.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
 volumes:
   redis-data:
   cargo-registry:
@@ -147,3 +230,6 @@ volumes:
   backend-target:
   frontend-node-modules:
   frontend-bun-cache:
+  loki-data:
+  prometheus-data:
+  grafana-data:

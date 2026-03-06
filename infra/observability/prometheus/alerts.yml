@@ -1,0 +1,87 @@
+groups:
+  - name: reqstly-observability
+    interval: 30s
+    rules:
+      - alert: BackendUnavailable
+        expr: up{job="reqstly_backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: Backend metrics endpoint is unreachable
+          description: Prometheus cannot scrape backend /metrics for 2 minutes.
+          runbook_url: https://github.com/junaadh/reqstly/blob/master/docs/OBSERVABILITY_RUNBOOK.md#backendunavailable
+
+      - alert: BackendHighErrorRate
+        expr: |
+          (
+            sum(rate(axum_http_requests_total{job="reqstly_backend",status=~"5..",endpoint!="/metrics"}[5m]))
+            /
+            sum(rate(axum_http_requests_total{job="reqstly_backend",endpoint!="/metrics"}[5m]))
+          ) > 0.05
+          and
+          sum(rate(axum_http_requests_total{job="reqstly_backend",endpoint!="/metrics"}[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: Backend 5xx error rate is above 5%
+          description: Error rate has stayed above 5% for 10 minutes.
+          runbook_url: https://github.com/junaadh/reqstly/blob/master/docs/OBSERVABILITY_RUNBOOK.md#backendhigherrorrate
+
+      - alert: BackendP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(axum_http_requests_duration_seconds_bucket{job="reqstly_backend",endpoint!="/metrics"}[5m])) by (le)
+          ) > 1
+          and
+          sum(rate(axum_http_requests_total{job="reqstly_backend",endpoint!="/metrics"}[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: Backend API p95 latency is above 1 second
+          description: API latency has remained elevated for 10 minutes.
+          runbook_url: https://github.com/junaadh/reqstly/blob/master/docs/OBSERVABILITY_RUNBOOK.md#backendp95latencyhigh
+
+      - alert: PostgresUnavailable
+        expr: pg_up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: Postgres exporter reports database as unavailable
+          description: pg_up has been 0 for 2 minutes.
+          runbook_url: https://github.com/junaadh/reqstly/blob/master/docs/OBSERVABILITY_RUNBOOK.md#postgresunavailable
+
+      - alert: PostgresConnectionSaturation
+        expr: |
+          (
+            max(pg_stat_database_numbackends{job="postgres",datname="postgres"})
+            /
+            max(pg_settings_max_connections{job="postgres"})
+          ) > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: Postgres connection usage is above 80%
+          description: Active backend connections are near configured max_connections.
+          runbook_url: https://github.com/junaadh/reqstly/blob/master/docs/OBSERVABILITY_RUNBOOK.md#postgresconnectionsaturation
+
+      - alert: RedisUnavailable
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: Redis exporter is unreachable
+          description: Prometheus cannot scrape redis-exporter for 2 minutes.
+          runbook_url: https://github.com/junaadh/reqstly/blob/master/docs/OBSERVABILITY_RUNBOOK.md#redisunavailable

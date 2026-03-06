@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 
+const usePolling = process.env.VITE_USE_POLLING === 'true';
+const pollingInterval = Number(process.env.VITE_POLLING_INTERVAL ?? '1000');
+
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	optimizeDeps: {
@@ -12,8 +15,9 @@ export default defineConfig({
 	},
 	server: {
 		watch: {
-			usePolling: process.env.VITE_USE_POLLING === 'true',
-			interval: Number(process.env.VITE_POLLING_INTERVAL ?? '300')
+			usePolling,
+			interval: pollingInterval,
+			ignored: ['**/.git/**', '**/.svelte-kit/**', '**/node_modules/**']
 		}
 	}
 });

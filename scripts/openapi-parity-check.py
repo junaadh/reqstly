@@ -10,6 +10,8 @@ OPENAPI_FILE = ROOT / "backend" / "openapi" / "openapi.yaml"
 
 EXPECTED_IMPLEMENTATION_ROUTES = {
     ("GET", "/health"),
+    ("GET", "/metrics"),
+    ("GET", "/ws"),
     ("GET", "/api/v1/health"),
     ("GET", "/api/v1/me"),
     ("PATCH", "/api/v1/me"),
@@ -23,6 +25,13 @@ EXPECTED_IMPLEMENTATION_ROUTES = {
     ("PATCH", "/api/v1/requests/{id}"),
     ("DELETE", "/api/v1/requests/{id}"),
     ("GET", "/api/v1/requests/{id}/audit"),
+}
+
+# Routes intentionally exposed by the service but excluded from OpenAPI docs.
+# These are operational/internal endpoints rather than public HTTP contract.
+EXPECTED_NON_OPENAPI_ROUTES = {
+    ("GET", "/metrics"),
+    ("GET", "/ws"),
 }
 
 
@@ -59,9 +68,20 @@ def main() -> int:
         return 1
 
     documented_routes = parse_openapi_routes(OPENAPI_FILE)
+    expected_openapi_routes = (
+        EXPECTED_IMPLEMENTATION_ROUTES - EXPECTED_NON_OPENAPI_ROUTES
+    )
 
-    missing_from_openapi = EXPECTED_IMPLEMENTATION_ROUTES - documented_routes
-    undocumented_in_impl_manifest = documented_routes - EXPECTED_IMPLEMENTATION_ROUTES
+    unknown_non_openapi_routes = (
+        EXPECTED_NON_OPENAPI_ROUTES - EXPECTED_IMPLEMENTATION_ROUTES
+    )
+    missing_from_openapi = expected_openapi_routes - documented_routes
+    undocumented_in_impl_manifest = documented_routes - expected_openapi_routes
+
+    if unknown_non_openapi_routes:
+        print("Non-OpenAPI route manifest contains unknown implementation routes:")
+        for method, path in sorted(unknown_non_openapi_routes):
+            print(f"  - {method} {path}")
 
     if missing_from_openapi:
         print("Missing OpenAPI routes:")
@@ -73,7 +93,11 @@ def main() -> int:
         for method, path in sorted(undocumented_in_impl_manifest):
             print(f"  - {method} {path}")
 
-    if missing_from_openapi or undocumented_in_impl_manifest:
+    if (
+        unknown_non_openapi_routes
+        or missing_from_openapi
+        or undocumented_in_impl_manifest
+    ):
         return 1
 
     print("OpenAPI parity check passed")
