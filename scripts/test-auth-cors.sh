@@ -51,7 +51,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Starting Supabase auth gateway services for CORS regression check..."
-"${compose_cmd[@]}" up -d --wait --wait-timeout "${AUTH_CORS_WAIT_TIMEOUT_VALUE}" kong auth >/dev/null
+"${compose_cmd[@]}" up -d kong auth >/dev/null
 
 request_headers() {
   local method="$1"
@@ -60,6 +60,7 @@ request_headers() {
 
   local curl_args=(
     -sS
+    --max-time "${AUTH_CORS_CURL_TIMEOUT:-5}"
     -D -
     -o /dev/null
     -X "${method}"
@@ -75,6 +76,28 @@ request_headers() {
   fi
 
   curl "${curl_args[@]}"
+}
+
+wait_for_auth_gateway() {
+  local deadline="$((SECONDS + AUTH_CORS_WAIT_TIMEOUT_VALUE))"
+
+  while (( SECONDS < deadline )); do
+    local headers
+    headers="$(request_headers OPTIONS "/auth/v1/user" "GET" 2>/dev/null || true)"
+    local status_code
+    status_code="$(printf '%s\n' "${headers}" | awk 'toupper($1) ~ /^HTTP\// { print $2; exit }')"
+
+    if [[ "${status_code}" =~ ^[0-9]{3}$ ]]; then
+      return 0
+    fi
+
+    sleep 2
+  done
+
+  echo "Auth gateway did not become ready within ${AUTH_CORS_WAIT_TIMEOUT_VALUE}s."
+  "${compose_cmd[@]}" ps || true
+  "${compose_cmd[@]}" logs --tail 120 auth kong vector analytics db || true
+  exit 1
 }
 
 extract_header() {
@@ -128,6 +151,8 @@ assert_cors_headers() {
 
   echo "CORS headers valid for ${endpoint}"
 }
+
+wait_for_auth_gateway
 
 assert_cors_headers "/auth/v1/token?grant_type=password" "POST"
 assert_cors_headers "/auth/v1/user" "GET"
