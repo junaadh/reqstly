@@ -15,6 +15,8 @@ Current strategic target:
 - Keep OIDC/Entra deferred to Phase D.
 - Keep canonical identity in `app.app_users`.
 
+Phase 5 embedded-auth baseline is implemented; further work should build on this baseline rather than reintroducing provider-coupled auth paths.
+
 ## Current Active Infra
 
 - Caddy (TLS/reverse proxy)

@@ -11,6 +11,8 @@ Infrastructure baseline is:
 - Redis
 - Observability stack (`infra/observability/`)
 
+Supabase infrastructure artifacts are no longer part of active runtime.
+
 Entra/OIDC runtime is deferred to Phase D.
 
 ## Compose Model
@@ -30,6 +32,7 @@ Direct `docker compose` is for debugging/teardown only.
 - `backend`
 - `frontend`
 - `db` (Postgres)
+- `migrate` (one-shot SQLx migrations container)
 - `caddy`
 - `redis`
 - `prometheus`
@@ -89,6 +92,8 @@ Canonical env definitions live in:
 ```bash
 ./scripts/up-dev.sh
 ```
+
+`migrate` is expected to exit `0` after applying migrations.
 
 3. Reset DB when needed:
 

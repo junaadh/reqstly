@@ -8,7 +8,7 @@ Reqstly is in a big-bang rewrite with strict phase ordering.
 2. Backend hardening and tests
 3. Frontend rewrite (SvelteKit)
 4. Observability
-5. Auth/data platform refactor (Phase 5, active)
+5. Auth/data platform refactor (Phase 5 baseline completed)
 
 ## Phase Snapshot (March 7, 2026)
 
@@ -17,7 +17,7 @@ Reqstly is in a big-bang rewrite with strict phase ordering.
 - Phase 2: complete
 - Phase 3: complete
 - Phase 4: complete
-- Phase 5: active (embedded auth re-baseline)
+- Phase 5: baseline completed (embedded auth)
 
 ## Target Stack (Phase 5 Baseline)
 
@@ -37,9 +37,14 @@ Reqstly is in a big-bang rewrite with strict phase ordering.
 - Business FKs point only to `app.app_users.id`.
 - No business coupling to Supabase/authentik/internal provider tables.
 
-## Transition Note
+## Auth Surface (Current)
 
-Phase 5 is in progress. Some legacy Supabase assets remain in-repo until cleanup checklist items complete.
+- Password signup/login + session cookies
+- Passkey signup (email + display name), passkey enrollment, passkey login
+- CSRF token issuance/validation for authenticated browser mutations
+- WebSocket dual auth:
+  - cookie session
+  - short-lived ws bearer token minted from `/api/v1/auth/ws-token`
 
 ## Repository Layout
 

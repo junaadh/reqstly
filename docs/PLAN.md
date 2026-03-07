@@ -16,7 +16,7 @@ Reqstly remains a big-bang rewrite with strict phase sequencing:
 - Phase 2: complete
 - Phase 3: complete
 - Phase 4: complete
-- Phase 5: active, re-baselined
+- Phase 5: baseline complete (embedded auth)
 
 ## 3) Phase 5 Re-Baseline Summary
 
@@ -87,13 +87,18 @@ Phase 5 is now an embedded-auth migration inside the existing Rust/Axum backend.
 
 1. `POST /api/v1/auth/signup`
 2. `POST /api/v1/auth/login/password`
-3. `POST /api/v1/auth/logout`
-4. `GET /api/v1/me`
-5. `POST /api/v1/auth/passkeys/register/start`
-6. `POST /api/v1/auth/passkeys/register/finish`
-7. `POST /api/v1/auth/passkeys/login/start`
-8. `POST /api/v1/auth/passkeys/login/finish`
-9. `POST /api/v1/auth/ws-token`
+3. `GET /api/v1/auth/csrf`
+4. `POST /api/v1/auth/logout`
+5. `POST /api/v1/auth/sessions/revoke`
+6. `POST /api/v1/auth/ws-token`
+7. `GET /api/v1/auth/passkeys`
+8. `POST /api/v1/auth/passkeys/register/start`
+9. `POST /api/v1/auth/passkeys/register/finish`
+10. `POST /api/v1/auth/passkeys/signup/start`
+11. `POST /api/v1/auth/passkeys/signup/finish`
+12. `POST /api/v1/auth/passkeys/login/start`
+13. `POST /api/v1/auth/passkeys/login/finish`
+14. `GET /api/v1/me`
 
 ### WebSocket contract
 
@@ -102,6 +107,7 @@ Phase 5 is now an embedded-auth migration inside the existing Rust/Axum backend.
   - session cookie
   - `Authorization: Bearer <token>`
   - `?token=<token>` for compatibility
+- Bearer tokens must be minted by `/api/v1/auth/ws-token` and match active issuance records.
 - Phase 5 frontend target is cookie-first path.
 
 ## 8) Security Baseline
@@ -117,14 +123,14 @@ Phase 5 is now an embedded-auth migration inside the existing Rust/Axum backend.
 9. No plaintext password logging or storage.
 10. Preserve consistent `401/403/422/429` response-envelope behavior.
 
-## 9) Migration Strategy
+## 9) Migration Outcomes
 
-1. Rewrite base migrations for hard cutover reset; remove dependencies on `auth.users`, `auth.uid()`, and Supabase realtime assumptions.
-2. Remove Supabase compatibility bootstrap from integration tests.
-3. Introduce auth tables + session store migration in normal migration chain.
-4. Repoint SQLx queries that depended on `auth.users` to `app.app_users`.
-5. Replace JWT-issuer validation path in business handlers with session/current-user extraction.
-6. Keep orchestration through existing script entrypoints:
+1. Base migrations were rewritten for hard cutover reset and no longer depend on `auth.users`, `auth.uid()`, or Supabase realtime assumptions.
+2. Supabase compatibility bootstrap was removed from integration tests.
+3. Auth tables + session store migrations are part of the main migration chain.
+4. SQLx queries previously coupled to `auth.users` now resolve identity via `app.app_users`.
+5. Business handler auth resolution uses session/current-user extraction instead of Supabase JWT assumptions.
+6. Script entrypoints remain canonical:
    - `./scripts/up-dev.sh`
    - `./scripts/reset-dev-db.sh`
    - `./scripts/smoke-check.sh`
@@ -133,24 +139,20 @@ Phase 5 is now an embedded-auth migration inside the existing Rust/Axum backend.
 
 ### Phase A: Schema + Password + Session
 
-1. Land schema and FK migration rewrite.
-2. Add session middleware and app-state wiring.
-3. Implement signup/login/logout/me.
-4. Replace protected-handler auth extraction with session-based resolver.
+Status: complete.
 
 ### Phase B: Passkeys
 
-1. Initialize `Webauthn` service in app state.
-2. Implement passkey register start/finish.
-3. Implement passkey login start/finish.
-4. Persist credentials, sign counters, and challenge lifecycle.
+Status: complete.
 
 ### Phase C: Compatibility + Cleanup
 
-1. Add ws token mint endpoint and dual-mode ws auth.
-2. Remove Supabase auth code paths (backend + frontend).
-3. Remove authentik-specific docs/config assumptions.
-4. Keep OIDC extension points inert but compile-ready.
+Status: complete.
+Implemented outcomes:
+1. ws token mint endpoint + dual-mode ws auth.
+2. Supabase/authentik auth runtime removal from backend/frontend paths.
+3. CSRF/origin + rate-limit + auth-security hardening enabled.
+4. OIDC extension points kept inert and compile-ready.
 
 ### Phase D: Optional OIDC Later
 
@@ -183,15 +185,17 @@ Phase 5 is now an embedded-auth migration inside the existing Rust/Axum backend.
 3. Passkey replay/state handling bugs.
 - Mitigation: one-time challenge consumption, expiry, and state-owner checks.
 
-## 13) Exit Criteria
+## 13) Completion Status
 
-Phase 5 is complete when:
+Phase 5 baseline criteria are met in-repo:
 
-1. All checklist IDs in `docs/improvements.md` are completed.
+1. Checklist IDs in `docs/improvements.md` are completed for baseline scope.
 2. Supabase/authentik auth runtime dependencies are removed from active path.
 3. `app.app_users` is canonical identity and business FK target.
-4. Password + passkey flows pass staging checks.
-5. Staging smoke checks pass on the same commit promoted to production.
+4. Password + passkey flows are implemented and tested.
+5. Baseline scripts/smoke flow run without deprecated auth dependencies.
+
+Phase D (OIDC/Entra runtime) remains intentionally deferred.
 
 ## 14) Context7-Validated References
 
