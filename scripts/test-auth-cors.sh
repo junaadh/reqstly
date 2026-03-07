@@ -2,8 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE_COMPOSE_FILE="${BASE_COMPOSE_FILE:-${ROOT_DIR}/infra/supabase/docker-compose.yml}"
-OVERLAY_COMPOSE_FILE="${OVERLAY_COMPOSE_FILE:-${ROOT_DIR}/infra/docker-compose.dev.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-${ROOT_DIR}/infra/docker-compose.dev.yml}"
 
 if [[ -n "${ENV_FILE:-}" ]]; then
   SELECTED_ENV_FILE="${ENV_FILE}"
@@ -19,27 +18,19 @@ else
 fi
 
 set -a
+# shellcheck disable=SC1090
 source "${SELECTED_ENV_FILE}"
 set +a
 
-KONG_HTTP_PORT_VALUE="${KONG_HTTP_PORT:-8000}"
-AUTH_CORS_BASE_URL_VALUE="${AUTH_CORS_BASE_URL:-http://127.0.0.1:${KONG_HTTP_PORT_VALUE}}"
-AUTH_CORS_ORIGIN_VALUE="${AUTH_CORS_ORIGIN:-https://localhost}"
-AUTH_CORS_WAIT_TIMEOUT_VALUE="${AUTH_CORS_WAIT_TIMEOUT:-600}"
-
-if [[ -z "${ANON_KEY:-}" ]]; then
-  echo "ANON_KEY must be set in the selected env file."
-  exit 1
-fi
+AUTH_CORS_BASE_URL_VALUE="${AUTH_CORS_BASE_URL:-http://127.0.0.1:${BACKEND_PORT:-3000}}"
+AUTH_CORS_ORIGIN_VALUE="${AUTH_CORS_ORIGIN:-${APP_URL:-https://localhost}}"
+AUTH_CORS_WAIT_TIMEOUT_VALUE="${AUTH_CORS_WAIT_TIMEOUT:-300}"
 
 compose_cmd=(
   docker compose
   --env-file "${SELECTED_ENV_FILE}"
-  -f "${BASE_COMPOSE_FILE}"
+  -f "${COMPOSE_FILE}"
 )
-if [[ -f "${OVERLAY_COMPOSE_FILE}" ]]; then
-  compose_cmd+=(-f "${OVERLAY_COMPOSE_FILE}")
-fi
 
 cleanup() {
   if [[ "${AUTH_CORS_CLEANUP:-false}" != "true" ]]; then
@@ -50,42 +41,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Starting Supabase auth gateway services for CORS regression check..."
-"${compose_cmd[@]}" up -d --no-deps db analytics auth kong >/dev/null
+echo "Starting backend stack for CORS regression check..."
+"${compose_cmd[@]}" up -d --remove-orphans --wait --wait-timeout "${AUTH_CORS_WAIT_TIMEOUT_VALUE}" db migrate backend >/dev/null
 
 request_headers() {
   local method="$1"
   local path="$2"
   local ac_request_method="$3"
 
-  local curl_args=(
-    -sS
-    --max-time "${AUTH_CORS_CURL_TIMEOUT:-5}"
-    -D -
-    -o /dev/null
-    -X "${method}"
-    "${AUTH_CORS_BASE_URL_VALUE}${path}"
-    -H "Origin: ${AUTH_CORS_ORIGIN_VALUE}"
-    -H "Access-Control-Request-Method: ${ac_request_method}"
-    -H "Access-Control-Request-Headers: apikey,authorization,content-type,x-client-info,x-supabase-api-version"
-    -H "apikey: ${ANON_KEY}"
-  )
-
-  if [[ "${AUTH_CORS_INSECURE_TLS:-false}" == "true" ]]; then
-    curl_args=(-k "${curl_args[@]}")
-  fi
-
-  curl "${curl_args[@]}"
+  curl -sS \
+    --max-time "${AUTH_CORS_CURL_TIMEOUT:-5}" \
+    -D - \
+    -o /dev/null \
+    -X "${method}" \
+    "${AUTH_CORS_BASE_URL_VALUE}${path}" \
+    -H "Origin: ${AUTH_CORS_ORIGIN_VALUE}" \
+    -H "Access-Control-Request-Method: ${ac_request_method}" \
+    -H "Access-Control-Request-Headers: authorization,content-type,x-request-id"
 }
 
-wait_for_auth_gateway() {
+wait_for_backend() {
   local deadline="$((SECONDS + AUTH_CORS_WAIT_TIMEOUT_VALUE))"
 
   while (( SECONDS < deadline )); do
-    local headers
-    headers="$(request_headers OPTIONS "/auth/v1/user" "GET" 2>/dev/null || true)"
     local status_code
-    status_code="$(printf '%s\n' "${headers}" | awk 'toupper($1) ~ /^HTTP\// { print $2; exit }')"
+    status_code="$(
+      request_headers OPTIONS "/api/v1/me" "GET" 2>/dev/null \
+        | awk 'toupper($1) ~ /^HTTP\// { print $2; exit }'
+    )"
 
     if [[ "${status_code}" =~ ^[0-9]{3}$ ]]; then
       return 0
@@ -94,9 +77,9 @@ wait_for_auth_gateway() {
     sleep 2
   done
 
-  echo "Auth gateway did not become ready within ${AUTH_CORS_WAIT_TIMEOUT_VALUE}s."
+  echo "Backend did not become ready within ${AUTH_CORS_WAIT_TIMEOUT_VALUE}s."
   "${compose_cmd[@]}" ps || true
-  "${compose_cmd[@]}" logs --tail 120 auth kong analytics db || true
+  "${compose_cmd[@]}" logs --tail 120 backend migrate db || true
   exit 1
 }
 
@@ -152,9 +135,10 @@ assert_cors_headers() {
   echo "CORS headers valid for ${endpoint}"
 }
 
-wait_for_auth_gateway
+wait_for_backend
 
-assert_cors_headers "/auth/v1/token?grant_type=password" "POST"
-assert_cors_headers "/auth/v1/user" "GET"
+assert_cors_headers "/api/v1/auth/login/password" "POST"
+assert_cors_headers "/api/v1/auth/passkeys/login/start" "POST"
+assert_cors_headers "/api/v1/me" "GET"
 
 echo "Auth CORS regression checks passed"

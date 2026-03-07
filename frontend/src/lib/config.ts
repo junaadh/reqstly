@@ -14,10 +14,5 @@ function normalizeApiBaseUrl(input: string): string {
 }
 
 const PUBLIC_API_BASE_URL = env.PUBLIC_API_BASE_URL ?? '';
-const PUBLIC_SUPABASE_URL = env.PUBLIC_SUPABASE_URL ?? '';
-const PUBLIC_SUPABASE_ANON_KEY = env.PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 export const apiBaseUrl = normalizeApiBaseUrl(PUBLIC_API_BASE_URL);
-export const supabaseUrl = PUBLIC_SUPABASE_URL.trim();
-export const supabaseAnonKey = PUBLIC_SUPABASE_ANON_KEY.trim();
-export const hasSupabaseConfig = supabaseUrl.length > 0 && supabaseAnonKey.length > 0;

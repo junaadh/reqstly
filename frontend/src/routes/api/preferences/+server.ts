@@ -1,7 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 
-import { asApiError, callBackend } from '$lib/server/backend';
-import { getAccessTokenFromCookies } from '$lib/server/auth-cookie';
+import { asApiError, callBackend, withSessionCookie } from '$lib/server/backend';
 
 function unauthorizedResponse() {
   return json(
@@ -15,11 +14,14 @@ function unauthorizedResponse() {
   );
 }
 
-export const GET: RequestHandler = async ({ cookies, fetch }) => {
-  const token = getAccessTokenFromCookies(cookies);
-  if (!token) return unauthorizedResponse();
+export const GET: RequestHandler = async ({ fetch, request }) => {
+  const result = await callBackend(
+    fetch,
+    '/preferences',
+    withSessionCookie(request.headers.get('cookie'))
+  );
+  if (result.status === 401) return unauthorizedResponse();
 
-  const result = await callBackend(fetch, token, '/preferences');
   if (result.json && typeof result.json === 'object') {
     return json(result.json, { status: result.status });
   }
@@ -35,10 +37,8 @@ export const GET: RequestHandler = async ({ cookies, fetch }) => {
   );
 };
 
-export const PATCH: RequestHandler = async ({ cookies, fetch, request }) => {
-  const token = getAccessTokenFromCookies(cookies);
-  if (!token) return unauthorizedResponse();
-
+export const PATCH: RequestHandler = async ({ fetch, request }) => {
+  const cookieHeader = request.headers.get('cookie');
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') {
     return json(
@@ -52,10 +52,15 @@ export const PATCH: RequestHandler = async ({ cookies, fetch, request }) => {
     );
   }
 
-  const result = await callBackend(fetch, token, '/preferences', {
-    method: 'PATCH',
-    body: JSON.stringify(body)
-  });
+  const result = await callBackend(
+    fetch,
+    '/preferences',
+    withSessionCookie(cookieHeader, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    })
+  );
+  if (result.status === 401) return unauthorizedResponse();
 
   if (result.json && typeof result.json === 'object') {
     return json(result.json, { status: result.status });

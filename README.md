@@ -3,31 +3,46 @@
 Reqstly is in a big-bang rewrite with strict phase ordering.
 
 ## Rewrite Order
-1. Backend (Supabase DB + Supabase Auth integration)
+
+1. Backend core
 2. Backend hardening and tests
 3. Frontend rewrite (SvelteKit)
-4. Observability stack
-5. Improvements backlog and hardening
+4. Observability
+5. Auth/data platform refactor (Phase 5, active)
 
 ## Phase Snapshot (March 7, 2026)
-- Phase 0 (Infra Foundation): complete
-- Phase 1 (Backend Core): complete
-- Phase 2 (Backend Hardening): complete
-- Phase 3 (Frontend Rewrite): complete
-- Phase 4 (Observability): complete
-- Phase 5 (Improvements Backlog): next
 
-## Active Stack
-- Supabase full self-hosted stack (`infra/supabase/`):
-  - Kong, Auth, PostgREST, Realtime, Storage, Postgres, Studio, Functions, Analytics, Vector, Supavisor
-- Reqstly backend (Rust + Axum + SQLx)
-- Reqstly frontend (SvelteKit + Bun + Tailwind + shadcn-svelte)
-- Caddy TLS reverse proxy (`https://localhost`, `https://api.localhost`, `https://supabase.localhost`)
-- Redis
-- Observability stack (Prometheus, Loki, Promtail, Grafana, Postgres exporter, Redis exporter)
-- Docker Compose (Supabase base + Reqstly overlays)
+- Phase 0: complete
+- Phase 1: complete
+- Phase 2: complete
+- Phase 3: complete
+- Phase 4: complete
+- Phase 5: active (embedded auth re-baseline)
+
+## Target Stack (Phase 5 Baseline)
+
+- Backend: Rust + Axum + SQLx
+- Frontend: SvelteKit + Bun + Tailwind + shadcn-svelte
+- Database: PostgreSQL (`app.*` schema)
+- Auth (embedded in backend):
+  - `password-auth` for password hashing/verification
+  - `webauthn-rs` for passkeys
+  - `tower-sessions` + SQLx store for first-party sessions
+- Realtime: Axum WebSocket (`/ws`) with cookie-first auth + ws bearer compatibility
+- Infra: Caddy, Redis, Observability stack, Docker Compose
+
+## Identity Model
+
+- `app.app_users` is canonical app identity.
+- Business FKs point only to `app.app_users.id`.
+- No business coupling to Supabase/authentik/internal provider tables.
+
+## Transition Note
+
+Phase 5 is in progress. Some legacy Supabase assets remain in-repo until cleanup checklist items complete.
 
 ## Repository Layout
+
 ```text
 reqstly/
 ├── backend/
@@ -37,18 +52,11 @@ reqstly/
 │   ├── frontend_functionality.md
 │   └── improvements.md
 ├── infra/
-│   ├── supabase/
 │   ├── docker-compose.dev.yml
 │   ├── docker-compose.yml
 │   ├── observability/
 │   └── proxy/caddy/
 ├── scripts/
-│   ├── setup-dev.sh
-│   ├── up-dev.sh
-│   ├── up-prod.sh
-│   ├── smoke-check.sh
-│   ├── test-backend.sh
-│   └── reset-dev-db.sh
 ├── AGENTS.md
 ├── .env.example
 ├── .env.local.example
@@ -57,43 +65,39 @@ reqstly/
 
 ## Local Development
 
-### Quick Setup (fresh clone)
-```bash
-./scripts/setup-dev.sh
-```
+Canonical entrypoints (kept unchanged during migration):
 
-`setup-dev.sh` will:
-- create `.env.local` from `.env.local.example` (unless it already exists)
-- generate local Supabase dev secrets (`JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`, and related keys)
-- generate dev TLS certificates in `infra/proxy/caddy/certs/dev`
-
-Useful options:
-- `ROTATE_KEYS=1 ./scripts/setup-dev.sh` rotates secrets in existing `.env.local`
-- `FORCE=1 ./scripts/setup-dev.sh` recreates `.env.local` from template and generates new secrets
-- `ENV_FILE=/path/to/.env.local ./scripts/setup-dev.sh` writes env to a custom path
+- `./scripts/setup-dev.sh`
+- `./scripts/up-dev.sh`
+- `./scripts/reset-dev-db.sh`
+- `./scripts/test-backend.sh`
+- `./scripts/smoke-check.sh`
+- `./scripts/up-prod.sh`
 
 ### Prerequisites
+
 - Docker with Compose plugin
 - `curl`
-- `openssl` (for local TLS certificate generation)
-- `bun` (for frontend checks/builds)
-- Docker VM capacity for full Supabase stack:
-  - minimum recommended: 4 GB RAM, 2 CPU
-  - preferred for smoother Supabase stack startup: 8 GB RAM, 4 CPU
+- `openssl`
+- `bun`
 
-### Start Dev Stack
+### Start Stack
+
 ```bash
 ./scripts/up-dev.sh
 ```
 
-`up-dev.sh` waits for compose service health and backend health before returning.
+### Backend Checks
 
-Common options:
-- `COMPOSE_BUILD=1 ./scripts/up-dev.sh` to force rebuild
-- `COMPOSE_FORCE_RECREATE=1 ./scripts/up-dev.sh backend` to recreate selected services and reconcile health
-- `BACKEND_HEALTH_TIMEOUT=1200 ./scripts/up-dev.sh` to increase backend health wait timeout
+```bash
+cd backend
+cargo fmt -- --check
+cargo check
+cargo test --lib
+```
 
-### Frontend Checks (Local)
+### Frontend Checks
+
 ```bash
 cd frontend
 bun install --frozen-lockfile
@@ -101,62 +105,42 @@ bun run check
 bun run build
 ```
 
-### Backend Tests (Local)
+### Smoke Checks
+
 ```bash
-./scripts/test-backend.sh
+./scripts/smoke-check.sh
 ```
 
-### Health Checks
-```bash
-curl -kfsS https://localhost/health
-curl -kfsS https://api.localhost/health
-curl -kfsS https://supabase.localhost/health
-```
+## Production
 
-### Observability Access (Local)
-After `./scripts/up-dev.sh`, the stack provisions Grafana datasources and dashboard automatically.
-
-- Grafana: `http://127.0.0.1:${GRAFANA_PORT:-3001}` (default `admin` / `admin` from `.env.local`)
-- Prometheus: `http://127.0.0.1:${PROMETHEUS_PORT:-9090}`
-- Loki API: `http://127.0.0.1:${LOKI_PORT:-3100}`
-
-Default dashboard:
-- `Reqstly / Reqstly Observability Overview`
-
-### Stop Stack
-```bash
-docker compose --env-file .env.local -f infra/supabase/docker-compose.yml -f infra/docker-compose.dev.yml down
-```
-
-## Production (Manual)
 Use `.env` production values, then:
+
 ```bash
 ./scripts/up-prod.sh
 ```
 
 ## CI/CD
-CI runs backend and frontend checks.
 
-Deploy workflow is staging-first:
-1. Build and push backend/frontend images
+Deployment remains staging-first and mandatory:
+
+1. Build/test
 2. Deploy staging
 3. Run staging smoke checks
 4. Deploy production
 
-Production promotion must not bypass staging validation.
-
 ## Tooling Conventions
+
 - Prefer `bun` over `npm`
 - Prefer `bunx` over `npx`
-- Only use `npm`/`npx` when explicitly requested or when blocked on Bun tooling
 
 ## Documentation
-- Rewrite plan and phase gates: [docs/PLAN.md](docs/PLAN.md)
-- Frontend/API mapping: [docs/frontend_functionality.md](docs/frontend_functionality.md)
-- Phase 5 backlog candidates: [docs/improvements.md](docs/improvements.md)
-- Observability alert runbook: [docs/OBSERVABILITY_RUNBOOK.md](docs/OBSERVABILITY_RUNBOOK.md)
-- Repository agent rules: [AGENTS.md](AGENTS.md)
-- Infra details: [infra/README.md](infra/README.md)
+
+- Plan and gates: [docs/PLAN.md](docs/PLAN.md)
+- Phase 5 checklist: [docs/improvements.md](docs/improvements.md)
+- Frontend/API map: [docs/frontend_functionality.md](docs/frontend_functionality.md)
+- Infra runbook: [infra/README.md](infra/README.md)
+- Agent rules: [AGENTS.md](AGENTS.md)
 
 ## License
+
 MIT

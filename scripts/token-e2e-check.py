@@ -5,11 +5,20 @@ import ssl
 import time
 import urllib.error
 import urllib.request
+from http.cookiejar import CookieJar
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse, urlunparse
 
 
-def request_json(method: str, url: str, payload=None, headers=None):
+def build_opener():
+    cookie_jar = CookieJar()
+    handlers = [urllib.request.HTTPCookieProcessor(cookie_jar)]
+    if os.getenv("SMOKE_INSECURE_TLS") == "true":
+        handlers.append(urllib.request.HTTPSHandler(context=ssl._create_unverified_context()))
+    return urllib.request.build_opener(*handlers)
+
+
+def request_json(opener, method: str, url: str, payload=None, headers=None):
     body = None
     req_headers = {"content-type": "application/json"}
     if headers:
@@ -18,15 +27,14 @@ def request_json(method: str, url: str, payload=None, headers=None):
         body = json.dumps(payload).encode("utf-8")
 
     req = urllib.request.Request(url, data=body, method=method, headers=req_headers)
-    ctx = ssl._create_unverified_context() if os.getenv("SMOKE_INSECURE_TLS") == "true" else None
-    with urllib.request.urlopen(req, context=ctx) as resp:
+    with opener.open(req) as resp:
         raw = resp.read().decode("utf-8")
         return resp.status, json.loads(raw) if raw else {}
 
 
-def request_json_with_localhost_fallback(method: str, url: str, payload=None, headers=None):
+def request_json_with_localhost_fallback(opener, method: str, url: str, payload=None, headers=None):
     try:
-        return request_json(method, url, payload=payload, headers=headers)
+        return request_json(opener, method, url, payload=payload, headers=headers)
     except urllib.error.HTTPError:
         raise
     except urllib.error.URLError:
@@ -57,7 +65,7 @@ def request_json_with_localhost_fallback(method: str, url: str, payload=None, he
 
         fallback_headers = dict(headers or {})
         fallback_headers["Host"] = host if parsed.port is None else f"{host}:{parsed.port}"
-        return request_json(method, fallback_url, payload=payload, headers=fallback_headers)
+        return request_json(opener, method, fallback_url, payload=payload, headers=fallback_headers)
 
 
 def load_env_file() -> None:
@@ -65,13 +73,7 @@ def load_env_file() -> None:
     explicit = os.getenv("ENV_FILE")
     if explicit:
         candidates.append(Path(explicit))
-    candidates.extend(
-        [
-            Path(".env.local"),
-            Path(".env"),
-            Path(".env.example"),
-        ]
-    )
+    candidates.extend([Path(".env.local"), Path(".env"), Path(".env.example")])
 
     env_file = next((path for path in candidates if path.exists()), None)
     if env_file is None:
@@ -87,70 +89,59 @@ def load_env_file() -> None:
 
 def main():
     load_env_file()
-    api_url = os.getenv("API_URL", "https://api.localhost")
-    supabase_url = os.getenv("SUPABASE_PUBLIC_URL") or os.getenv("SUPABASE_URL") or "https://supabase.localhost"
-    anon_key = os.getenv("ANON_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    api_url = os.getenv("API_URL", "https://api.localhost").rstrip("/")
     email = os.getenv("E2E_TEST_EMAIL", f"reqstly-e2e-{int(time.time())}@example.com")
-    password = os.getenv("E2E_TEST_PASSWORD", "Passw0rd-Reqstly!")
-    auth_headers = {"apikey": anon_key} if anon_key else None
+    password = os.getenv("E2E_TEST_PASSWORD", "Passw0rd-Reqstly!2026")
+    opener = build_opener()
 
-    signup_url = f"{supabase_url}/auth/v1/signup"
-    token = None
-
-    try:
-        _, signup_payload = request_json_with_localhost_fallback(
-            "POST",
-            signup_url,
-            payload={"email": email, "password": password},
-            headers=auth_headers,
-        )
-        token = signup_payload.get("access_token")
-    except urllib.error.HTTPError as err:
-        # User may already exist; fall back to password grant.
-        if err.code not in (400, 422):
-            raise
-
-    if not token:
-        grant_url = f"{supabase_url}/auth/v1/token?grant_type=password"
-        _, grant_payload = request_json_with_localhost_fallback(
-            "POST",
-            grant_url,
-            payload={"email": email, "password": password},
-            headers=auth_headers,
-        )
-        token = grant_payload.get("access_token")
-
-    if not token:
-        raise RuntimeError("Could not obtain Supabase access token")
-
-    auth_headers = {"Authorization": f"Bearer {token}"}
+    signup_status, signup_payload = request_json_with_localhost_fallback(
+        opener,
+        "POST",
+        f"{api_url}/api/v1/auth/signup",
+        payload={"email": email, "password": password, "display_name": "E2E User"},
+    )
+    if signup_status not in (200, 201):
+        raise RuntimeError(f"signup failed: {signup_status} {signup_payload}")
 
     me_status, me_payload = request_json_with_localhost_fallback(
-        "GET", f"{api_url}/api/v1/me", headers=auth_headers
+        opener, "GET", f"{api_url}/api/v1/me"
     )
-    assert me_status == 200, f"/me failed: {me_status} {me_payload}"
+    assert me_status == 200, f"/me failed after signup: {me_status} {me_payload}"
+
+    logout_status, _ = request_json_with_localhost_fallback(
+        opener, "POST", f"{api_url}/api/v1/auth/logout"
+    )
+    assert logout_status in (200, 204), f"/logout failed: {logout_status}"
+
+    login_status, login_payload = request_json_with_localhost_fallback(
+        opener,
+        "POST",
+        f"{api_url}/api/v1/auth/login/password",
+        payload={"email": email, "password": password},
+    )
+    assert login_status == 200, f"password login failed: {login_status} {login_payload}"
 
     create_status, create_payload = request_json_with_localhost_fallback(
+        opener,
         "POST",
         f"{api_url}/api/v1/requests",
         payload={
-            "title": "Token E2E request",
-            "description": "created via Supabase token flow",
+            "title": "Session E2E request",
+            "description": "created via backend session flow",
             "category": "IT",
             "priority": "medium",
         },
-        headers=auth_headers,
     )
     assert create_status == 201, f"create failed: {create_status} {create_payload}"
 
     request_id = create_payload["data"]["id"]
     list_status, list_payload = request_json_with_localhost_fallback(
-        "GET", f"{api_url}/api/v1/requests", headers=auth_headers
+        opener, "GET", f"{api_url}/api/v1/requests"
     )
     assert list_status == 200, f"list failed: {list_status} {list_payload}"
     assert any(item["id"] == request_id for item in list_payload["data"]), "created request missing from list"
 
-    print("Token-backed E2E check passed")
+    print("Session-backed E2E check passed")
 
 
 if __name__ == "__main__":

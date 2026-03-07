@@ -14,12 +14,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{FromRow, PgPool};
 use tokio::time::{self, Duration, Instant};
+use tower_sessions::Session;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::{
     AppState,
-    auth::{AuthUser, authenticate, authenticate_token, extract_bearer_token},
+    auth::{middleware, routes as auth_routes},
     error::{AppError, ErrorDetail},
     realtime::{self, ClientMessage, EventEnvelope},
     response,
@@ -167,6 +168,7 @@ struct AuditAppendEventPayload {
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .merge(auth_routes::router())
         .route("/health", get(health))
         .route("/me", get(me).patch(update_me))
         .route(
@@ -205,13 +207,10 @@ pub async fn health(
 pub async fn ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Query(query): Query<WsAuthQuery>,
 ) -> Result<Response, AppError> {
-    let token = extract_ws_token(&headers, query.token.as_deref())?;
-    let auth =
-        authenticate_token(&token, &state.jwt_secret, &state.jwt_issuer)?;
-
     let origin = headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok());
@@ -227,7 +226,9 @@ pub async fn ws(
         .and_then(|value| value.to_str().ok())
         .map(ToString::to_string);
 
-    let user_id = auth.auth_user_id;
+    let user_id =
+        resolve_ws_user_id(&state, &session, &headers, query.token.as_deref())
+            .await?;
     let hub = state.realtime_hub.clone();
 
     Ok(ws
@@ -243,7 +244,8 @@ fn extract_ws_token(
     query_token: Option<&str>,
 ) -> Result<String, AppError> {
     if headers.contains_key(header::AUTHORIZATION) {
-        return extract_bearer_token(headers).map(ToString::to_string);
+        return middleware::extract_bearer_token(headers)
+            .map(ToString::to_string);
     }
 
     let token = query_token
@@ -256,6 +258,29 @@ fn extract_ws_token(
         })?;
 
     Ok(token.to_string())
+}
+
+async fn resolve_ws_user_id(
+    state: &AppState,
+    session_handle: &Session,
+    headers: &HeaderMap,
+    query_token: Option<&str>,
+) -> Result<Uuid, AppError> {
+    let ws_token = extract_ws_token(headers, query_token).ok();
+
+    if let Some(token) = ws_token {
+        return middleware::verify_ws_token_with_state(state, &token).await;
+    }
+
+    let context =
+        middleware::resolve_request_auth(state, session_handle, headers).await;
+    match context {
+        Ok(auth) => Ok(auth.user.id),
+        Err(AppError::Unauthorized(_)) => Err(AppError::Unauthorized(
+            "missing websocket authentication token".to_string(),
+        )),
+        Err(other) => Err(other),
+    }
 }
 
 async fn handle_ws_connection(
@@ -405,10 +430,10 @@ fn handle_client_message(
 
 async fn me(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
 
     Ok(response::ok(
         StatusCode::OK,
@@ -422,47 +447,32 @@ async fn me(
 
 async fn update_me(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Json(input): Json<UpdateMeInput>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
+    let current_user =
+        require_authenticated_user(&state, &session, &headers).await?;
+    middleware::require_csrf_token(&state, &session, current_user.id, &headers)
+        .await?;
     let display_name = normalize_display_name(input.display_name.as_deref())?;
-    let fallback_email = format!("{}@users.reqstly.local", auth.auth_user_id);
-    let fallback_email = auth.email.as_deref().unwrap_or(&fallback_email);
 
     let user = sqlx::query_as::<_, AuthUserRow>(
-        "WITH updated AS (
-           UPDATE auth.users
-           SET raw_user_meta_data = jsonb_set(
-             COALESCE(raw_user_meta_data, '{}'::jsonb),
-             '{display_name}',
-             to_jsonb($2::text),
-             true
-           )
-           WHERE id = $1
-           RETURNING id, email, raw_user_meta_data
-         )
-         SELECT
-           id,
-           COALESCE(email::text, $3) AS email,
-           COALESCE(
-             NULLIF(raw_user_meta_data ->> 'display_name', ''),
-             NULLIF(raw_user_meta_data ->> 'full_name', ''),
-             split_part(COALESCE(email::text, $3), '@', 1),
-             'user'
-           ) AS display_name
-         FROM updated",
+        "UPDATE app.app_users
+         SET display_name = $2,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, COALESCE(email, '') AS email, display_name",
     )
-    .bind(auth.auth_user_id)
+    .bind(current_user.id)
     .bind(display_name)
-    .bind(fallback_email)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("auth user not found".to_string()))?;
 
     publish_event(
         &state,
-        &[auth.auth_user_id],
+        &[current_user.id],
         "profile.patch",
         None,
         json!({
@@ -488,10 +498,10 @@ async fn update_me(
 
 async fn get_preferences(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
     let preferences = fetch_or_create_preferences(&state.db, user.id).await?;
 
     Ok(response::ok(StatusCode::OK, preferences))
@@ -499,11 +509,12 @@ async fn get_preferences(
 
 async fn update_preferences(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Json(input): Json<UpdatePreferencesInput>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
+    middleware::require_csrf_token(&state, &session, user.id, &headers).await?;
     let current = fetch_or_create_preferences(&state.db, user.id).await?;
     let update = normalize_preferences_update(input, &current)?;
     let updated = upsert_preferences(&state.db, user.id, &update).await?;
@@ -524,11 +535,11 @@ async fn get_enums() -> impl IntoResponse {
 
 async fn list_assignee_suggestions(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Query(query): Query<AssigneeSuggestionsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
 
     let Some(domain) = email_domain(&user.email) else {
         return Ok(response::ok(
@@ -543,20 +554,15 @@ async fn list_assignee_suggestions(
     let suggestions = sqlx::query_as::<_, AssigneeSuggestionRow>(
         "SELECT
             u.id,
-            u.email::text AS email,
-            COALESCE(
-              NULLIF(u.raw_user_meta_data ->> 'display_name', ''),
-              NULLIF(u.raw_user_meta_data ->> 'full_name', ''),
-              split_part(u.email::text, '@', 1),
-              'user'
-            ) AS display_name,
+            u.email AS email,
+            u.display_name,
             COUNT(req.id)::bigint AS assignment_count
-         FROM auth.users u
+         FROM app.app_users u
          LEFT JOIN app.requests req
            ON req.assignee_user_id = u.id
          WHERE u.email IS NOT NULL
            AND u.id <> $3
-           AND lower(split_part(u.email::text, '@', 2)) = lower($1)
+           AND lower(split_part(u.email, '@', 2)) = lower($1)
            AND (
              $2::text = ''
              OR NOT EXISTS (
@@ -565,13 +571,12 @@ async fn list_assignee_suggestions(
                WHERE term <> ''
                  AND concat_ws(
                    ' ',
-                   lower(u.email::text),
-                   lower(COALESCE(u.raw_user_meta_data ->> 'display_name', '')),
-                   lower(COALESCE(u.raw_user_meta_data ->> 'full_name', ''))
+                   lower(u.email),
+                   lower(COALESCE(u.display_name, ''))
                  ) NOT LIKE ('%' || term || '%')
              )
            )
-         GROUP BY u.id, u.email, u.raw_user_meta_data
+         GROUP BY u.id, u.email, u.display_name
          ORDER BY assignment_count DESC, u.email ASC
          LIMIT $4",
     )
@@ -587,11 +592,11 @@ async fn list_assignee_suggestions(
 
 async fn list_requests(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Query(query): Query<ListRequestsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
 
     let page = query.page.unwrap_or(1).max(1);
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
@@ -628,7 +633,7 @@ async fn list_requests(
         "SELECT {}
          FROM app.request_participants participants
          JOIN app.requests req ON req.id = participants.request_id
-         LEFT JOIN auth.users assignee ON assignee.id = req.assignee_user_id
+         LEFT JOIN app.app_users assignee ON assignee.id = req.assignee_user_id
          WHERE participants.user_id = $1
            AND ($2::text IS NULL OR req.status = $2)
            AND ($3::text IS NULL OR req.category = $3)
@@ -646,9 +651,8 @@ async fn list_requests(
                    lower(req.category),
                    lower(req.status),
                    lower(req.priority),
-                   lower(COALESCE(assignee.email::text, '')),
-                   lower(COALESCE(assignee.raw_user_meta_data ->> 'display_name', '')),
-                   lower(COALESCE(assignee.raw_user_meta_data ->> 'full_name', ''))
+                   lower(COALESCE(assignee.email, '')),
+                   lower(COALESCE(assignee.display_name, ''))
                  ) NOT LIKE ('%' || term || '%')
              )
            )
@@ -672,7 +676,7 @@ async fn list_requests(
         "SELECT COUNT(*)
          FROM app.request_participants participants
          JOIN app.requests req ON req.id = participants.request_id
-         LEFT JOIN auth.users assignee ON assignee.id = req.assignee_user_id
+         LEFT JOIN app.app_users assignee ON assignee.id = req.assignee_user_id
          WHERE participants.user_id = $1
            AND ($2::text IS NULL OR req.status = $2)
            AND ($3::text IS NULL OR req.category = $3)
@@ -690,9 +694,8 @@ async fn list_requests(
                    lower(req.category),
                    lower(req.status),
                    lower(req.priority),
-                   lower(COALESCE(assignee.email::text, '')),
-                   lower(COALESCE(assignee.raw_user_meta_data ->> 'display_name', '')),
-                   lower(COALESCE(assignee.raw_user_meta_data ->> 'full_name', ''))
+                   lower(COALESCE(assignee.email, '')),
+                   lower(COALESCE(assignee.display_name, ''))
                  ) NOT LIKE ('%' || term || '%')
              )
            )",
@@ -710,13 +713,14 @@ async fn list_requests(
 
 async fn create_request(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Json(input): Json<CreateRequestInput>,
 ) -> Result<impl IntoResponse, AppError> {
     validate_create_input(&input)?;
 
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
+    middleware::require_csrf_token(&state, &session, user.id, &headers).await?;
     let normalized_assignee_email =
         normalize_assignee_email(input.assignee_email.as_deref())?;
     let assignee_user_id = resolve_assignee_user_id(
@@ -790,11 +794,11 @@ async fn create_request(
 
 async fn get_request(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
 
     let item = match fetch_visible_request(&state.db, id, user.id).await {
         Ok(item) => item,
@@ -814,12 +818,13 @@ async fn get_request(
 
 async fn update_request(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateRequestInput>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
+    middleware::require_csrf_token(&state, &session, user.id, &headers).await?;
 
     let existing = fetch_editable_request(&state.db, id, user.id).await?;
     let recipients_before = fetch_request_recipient_ids(&state.db, id).await?;
@@ -951,11 +956,12 @@ async fn update_request(
 
 async fn delete_request(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
+    middleware::require_csrf_token(&state, &session, user.id, &headers).await?;
 
     let existing = fetch_owned_request(&state.db, id, user.id).await?;
     let recipients =
@@ -1008,11 +1014,11 @@ async fn delete_request(
 
 async fn get_request_audit(
     State(state): State<AppState>,
+    session: Session,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let auth = authenticate(&headers, &state.jwt_secret, &state.jwt_issuer)?;
-    let user = fetch_auth_user(&state.db, &auth).await?;
+    let user = require_authenticated_user(&state, &session, &headers).await?;
 
     match fetch_visible_request(&state.db, id, user.id).await {
         Ok(_) => {}
@@ -1033,13 +1039,13 @@ async fn get_request_audit(
             logs.id,
             logs.request_id,
             logs.actor_user_id,
-            COALESCE(actor.email::text, logs.actor_user_id::text) AS actor_email,
+            COALESCE(actor.email, logs.actor_user_id::text) AS actor_email,
             logs.action,
             logs.old_value,
             logs.new_value,
             logs.created_at
          FROM app.request_audit_logs logs
-         LEFT JOIN auth.users actor ON actor.id = logs.actor_user_id
+         LEFT JOIN app.app_users actor ON actor.id = logs.actor_user_id
          WHERE logs.request_id = $1
          ORDER BY logs.created_at DESC",
     )
@@ -1050,31 +1056,18 @@ async fn get_request_audit(
     Ok(response::ok(StatusCode::OK, items))
 }
 
-async fn fetch_auth_user(
-    pool: &PgPool,
-    auth: &AuthUser,
+async fn require_authenticated_user(
+    state: &AppState,
+    session: &Session,
+    headers: &HeaderMap,
 ) -> Result<AuthUserRow, AppError> {
-    let fallback_email = format!("{}@users.reqstly.local", auth.auth_user_id);
-
-    sqlx::query_as::<_, AuthUserRow>(
-        "SELECT
-            id,
-            COALESCE(email::text, $2) AS email,
-            COALESCE(
-                NULLIF(raw_user_meta_data ->> 'display_name', ''),
-                NULLIF(raw_user_meta_data ->> 'full_name', ''),
-                split_part(COALESCE(email::text, $2), '@', 1),
-                'user'
-            ) AS display_name
-         FROM auth.users
-         WHERE id = $1",
-    )
-    .bind(auth.auth_user_id)
-    .bind(auth.email.clone().unwrap_or_else(|| fallback_email.clone()))
-    .fetch_optional(pool)
-    .await
-    .map_err(AppError::from)?
-    .ok_or_else(|| AppError::Unauthorized("auth user not found".to_string()))
+    let context =
+        middleware::resolve_request_auth(state, session, headers).await?;
+    Ok(AuthUserRow {
+        id: context.user.id,
+        email: context.user.email,
+        display_name: context.user.display_name,
+    })
 }
 
 async fn fetch_or_create_preferences(
@@ -1140,7 +1133,7 @@ async fn fetch_owned_request(
     let query = format!(
         "SELECT {}
          FROM app.requests req
-         LEFT JOIN auth.users assignee ON assignee.id = req.assignee_user_id
+         LEFT JOIN app.app_users assignee ON assignee.id = req.assignee_user_id
          WHERE req.id = $1 AND req.owner_user_id = $2",
         request_projection_sql()
     );
@@ -1161,7 +1154,7 @@ async fn fetch_editable_request(
     let query = format!(
         "SELECT {}
          FROM app.requests req
-         LEFT JOIN auth.users assignee ON assignee.id = req.assignee_user_id
+         LEFT JOIN app.app_users assignee ON assignee.id = req.assignee_user_id
          WHERE req.id = $1
            AND (req.owner_user_id = $2 OR req.assignee_user_id = $2)",
         request_projection_sql()
@@ -1186,7 +1179,7 @@ async fn fetch_visible_request(
          JOIN app.request_participants participants
            ON participants.request_id = req.id
           AND participants.user_id = $2
-         LEFT JOIN auth.users assignee ON assignee.id = req.assignee_user_id
+         LEFT JOIN app.app_users assignee ON assignee.id = req.assignee_user_id
          WHERE req.id = $1",
         request_projection_sql()
     );
@@ -1267,13 +1260,13 @@ async fn insert_audit_log(
            inserted.id,
            inserted.request_id,
            inserted.actor_user_id,
-           COALESCE(actor.email::text, inserted.actor_user_id::text) AS actor_email,
+           COALESCE(actor.email, inserted.actor_user_id::text) AS actor_email,
            inserted.action,
            inserted.old_value,
            inserted.new_value,
            inserted.created_at
          FROM inserted
-         LEFT JOIN auth.users actor ON actor.id = inserted.actor_user_id",
+         LEFT JOIN app.app_users actor ON actor.id = inserted.actor_user_id",
     )
     .bind(request_id)
     .bind(actor_user_id)
@@ -1374,13 +1367,12 @@ fn request_projection_sql() -> &'static str {
      req.status,
      req.priority,
      req.assignee_user_id,
-     assignee.email::text AS assignee_email,
+     assignee.email AS assignee_email,
      CASE
        WHEN assignee.id IS NULL THEN NULL
        ELSE COALESCE(
-         NULLIF(assignee.raw_user_meta_data ->> 'display_name', ''),
-         NULLIF(assignee.raw_user_meta_data ->> 'full_name', ''),
-         split_part(assignee.email::text, '@', 1),
+         NULLIF(assignee.display_name, ''),
+         split_part(assignee.email, '@', 1),
          'user'
        )
      END AS assignee_display_name,
@@ -1398,8 +1390,8 @@ async fn resolve_assignee_user_id(
 
     let user_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT id
-         FROM auth.users
-         WHERE lower(email::text) = lower($1)
+         FROM app.app_users
+         WHERE lower(email) = lower($1)
          LIMIT 1",
     )
     .bind(email)

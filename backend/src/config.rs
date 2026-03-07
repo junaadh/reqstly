@@ -5,8 +5,7 @@ use serde::Deserialize;
 pub struct Settings {
     pub server: ServerSettings,
     pub database: DatabaseSettings,
-    pub jwt: JwtSettings,
-    pub supabase: SupabaseSettings,
+    pub auth: AuthSettings,
     pub cors: CorsSettings,
     pub logging: LoggingSettings,
 }
@@ -23,13 +22,15 @@ pub struct DatabaseSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct JwtSettings {
-    pub secret: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SupabaseSettings {
-    pub url: String,
+pub struct AuthSettings {
+    pub ws_token_secret: String,
+    pub ws_token_issuer: String,
+    pub session_cookie_name: String,
+    pub session_idle_minutes: i64,
+    pub session_secure: bool,
+    pub webauthn_rp_id: String,
+    pub webauthn_rp_origin: String,
+    pub webauthn_rp_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -62,8 +63,14 @@ impl Settings {
                 "database.url",
                 "postgres://postgres:postgres@localhost:5432/postgres",
             )?
-            .set_default("jwt.secret", "dev-secret")?
-            .set_default("supabase.url", "http://localhost:54321")?
+            .set_default("auth.ws_token_secret", "dev-ws-token-secret")?
+            .set_default("auth.ws_token_issuer", "reqstly.local/ws")?
+            .set_default("auth.session_cookie_name", "reqstly_session")?
+            .set_default("auth.session_idle_minutes", 480)?
+            .set_default("auth.session_secure", false)?
+            .set_default("auth.webauthn_rp_id", "localhost")?
+            .set_default("auth.webauthn_rp_origin", "https://localhost")?
+            .set_default("auth.webauthn_rp_name", "Reqstly")?
             .set_default("cors.allowed_origin", "https://localhost")?
             .set_default(
                 "logging.level",

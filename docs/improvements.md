@@ -1,76 +1,65 @@
-# Reqstly Phase 5 Improvements Backlog
+# Phase 5 Execution Checklist (Re-Baseline)
 
-## Purpose
-This document captures high-impact improvements and additional features to drive Phase 5 after Phase 4 completion.
+This is the canonical Phase 5 migration checklist for embedded Axum auth.
 
-Scope assumptions:
-- Backend, frontend, DB, API, security, and deployment hardening are in scope.
-- Observability stack baseline is complete; follow-up hardening and product improvements continue here.
+## Locked Baseline
 
-## Current Snapshot
-- Backend `/api/v1` + websocket `/ws` are implemented.
-- Participant visibility model exists via `app.request_participants`.
-- Frontend routes and realtime patching are in place.
-- Passkey + email/password + Microsoft flows are integrated.
-- CI now enforces backend and frontend checks.
-- Root onboarding docs are now aligned with current frontend status and local setup flow.
+- No Supabase auth in baseline runtime.
+- No authentik in baseline runtime.
+- Baseline auth methods: email/password + passkeys.
+- OIDC/Entra runtime deferred to Phase D.
+- `app.app_users` is the only business identity FK target.
+- Hard cutover reset strategy remains active.
 
-## Priority 0: Next Execution Batch for Phase 5
+## Canonical Checklist IDs
 
-Completed baseline items (already done):
-- Frontend CI gates (`bun install`, `bun run check`, `bun run build`)
-- README/PLAN/infra docs alignment for active stack and phases
-
-| ID | Area | Improvement | Why | Acceptance Criteria |
+| Status | ID | Track | Task | Acceptance Criteria |
 |---|---|---|---|---|
-| P0-03 | Auth | Stabilize session-expired flow and refresh behavior end-to-end | Current redirect/refresh path has been fragile under CORS/session drift | `?reason=session-expired` recovery works without manual storage cleanup across Safari/Chromium |
-| P0-04 | Security | Add regression test for auth CORS headers (`/auth/v1/token`, `/auth/v1/user`) | Prevent wildcard CORS regressions on credentialed requests | Automated test asserts explicit origin + `allow-credentials=true` |
-| P0-05 | API | Implement `PATCH /api/v1/me` for profile persistence | Profile Save currently depends on auth metadata update path only | Display name update goes through backend API and is reflected in `/api/v1/me` |
-| P0-06 | API | Implement `/api/v1/preferences` GET/PATCH | Settings are currently browser-local only | Preferences persist server-side and hydrate on all devices |
-| P0-07 | API+DB | Add server-side request search (`q`) to `GET /api/v1/requests` | Current search is page-local in UI; misses non-loaded records | Query returns correct cross-page matches with filters/sort/pagination |
-| P0-08 | Realtime | Add deterministic resync contract on reconnect | Current fallback invalidate loop is coarse | Reconnect triggers targeted resync for active view with no stale list/detail mismatch |
-| P0-09 | Realtime+Tests | Add integration tests for assign/delete/status patch fanout | Collaboration correctness is critical and historically error-prone | Tests prove owner/assignee/participant visibility and live update behavior |
-| P0-10 | UX/A11Y | Resolve remaining accessibility gaps in auth/list/detail screens | Phase close should include baseline usability quality | Keyboard nav and ARIA checks pass for comboboxes, dialogs, and action menus |
+| [ ] | P5-RB-01 | Re-Baseline | Re-baseline docs from authentik plan to embedded auth plan | PLAN/improvements/frontend/README/infra/AGENTS aligned with embedded-auth scope |
+| [ ] | P5-DB-01 | Database | Add auth tables (`app_users`, password identities, passkey credentials, challenges, auth events, oidc identities, sessions) and hardening state tables (`user_auth_security`, `auth_rate_limit_buckets`, `csrf_tokens`, `ws_token_issuances`) | Migrations apply from empty DB; required indexes/constraints present; revocation/session/rate-limit primitives exist |
+| [ ] | P5-DB-02 | Database | Repoint business FKs to `app_users` | No business FK remains against `auth.users` or provider tables |
+| [ ] | P5-DB-03 | Database | Remove Supabase schema/runtime coupling and RLS/publication assumptions | No migration/query requires `auth.uid()` or Supabase realtime artifacts |
+| [ ] | P5-AUTH-01 | Backend Auth | Add `tower-sessions` middleware and current-user extraction | Protected handlers resolve current user from session (with defined bearer compatibility path) |
+| [ ] | P5-AUTH-02 | Backend Auth | Implement password signup/login/logout/me | Endpoints behave per envelope contract; generic credential mismatch errors |
+| [ ] | P5-AUTH-03 | Backend Auth | Implement passkey register/login start+finish | One-time expiring challenge lifecycle + credential persistence validated |
+| [ ] | P5-AUTH-04 | Backend Auth | Add ws dual auth mode and `/api/v1/auth/ws-token` | `/ws` works via session cookie and ws bearer token compatibility |
+| [ ] | P5-FE-01 | Frontend | Remove `supabase-js` and Supabase auth endpoint usage | Frontend has no auth dependency on Supabase SDK or `/auth/v1/*` |
+| [ ] | P5-FE-02 | Frontend | Rewire login/signup/profile passkey UX to backend auth endpoints | Email/password/passkey flows work with Reqstly-owned contracts |
+| [ ] | P5-INFRA-01 | Infrastructure | Remove authentik assumptions from compose/env docs and smoke checks | Infra docs/scripts define embedded-auth stack only |
+| [ ] | P5-INFRA-02 | Infrastructure | Keep script orchestration unchanged (`up-dev`, `reset-dev-db`, `smoke-check`) | Existing script entrypoints remain canonical and documented |
+| [ ] | P5-CLEAN-01 | Cleanup | Delete Supabase/authentik auth leftovers in code/docs/scripts | No active auth docs/scripts reference deprecated providers |
+| [ ] | P5-CLEAN-02 | Cleanup | Full consistency pass across Phase 5 docs | No contradictory architecture/auth statements remain |
 
-## Priority 1: High-Value Phase 5 Follow-ups
+## Baseline Public Interfaces
 
-| ID | Area | Improvement | Why | Acceptance Criteria |
-|---|---|---|---|---|
-| P1-01 | DB Design | Add trigram search indexes for request text search (title/description) | Keeps `q` search fast as dataset grows | Search query plan uses index; p95 search latency within target |
-| P1-02 | DB Design | Revisit participant source model (`owner/assignee/actor`) to preserve multi-source semantics | Current single `source` value can lose provenance | Model supports user being owner+actor+assignee without losing data fidelity |
-| P1-03 | API Design | Add cursor pagination option for large request lists | Offset pagination degrades at high offsets | Cursor mode available and documented; UI can opt-in |
-| P1-04 | Rust/API | Standardize error codes and field-level detail consistency across all handlers | Cleaner client behavior and easier test assertions | Error envelope parity test covers all main endpoint families |
-| P1-05 | Security | Introduce auth endpoint rate limits (login/passkey/otp) | Reduces brute-force and abuse risk | Configurable per-route limits with clear 429 responses |
-| P1-06 | Security | Add CSRF strategy for state-changing form actions when cookie auth is present | Reduces cross-site submission risk | CSRF token or equivalent protection on POST/PATCH/DELETE form flows |
-| P1-07 | Frontend | Replace native `<select>` controls with accessible custom select where needed | Better interaction consistency and design cohesion | Keyboard and screen reader behavior matches design system baseline |
-| P1-08 | Frontend | Add optimistic UI state + rollback for request updates | Better perceived performance and fewer jumpy transitions | Edit and assignment changes feel instant and reconcile correctly on failure |
-| P1-09 | Performance | Add request-list virtualization trigger for large pages | Avoid UI jank on dense datasets | Smooth scroll and stable interaction on 500+ rows |
-| P1-10 | DevOps | Extend smoke checks to include auth + realtime scenario | Current smoke covers service health only | Smoke validates login, request create, realtime patch receive, delete |
+### Canonical identity table
 
-## Priority 2: Additional Product Features Worth Starting
+- `app.app_users` is the canonical application identity table.
+- All business ownership/participant/audit relationships target `app.app_users(id)`.
 
-| ID | Area | Feature | Value | Acceptance Criteria |
-|---|---|---|---|---|
-| P2-01 | Requests | Request comments thread per ticket | Collaboration context beyond audit diffs | CRUD comments with participant visibility and realtime append |
-| P2-02 | Requests | Attachment support (metadata first, file transport later) | Improves operational usefulness | Upload/list/delete metadata path and permission checks |
-| P2-03 | Workflow | SLA fields (`due_at`, breach indicator, aging views) | Better prioritization and accountability | SLA badges + overdue filters on dashboard/list |
-| P2-04 | Dashboard | Saved views/filters per user | Faster repeated workflows | User can save, rename, and reuse list filter presets |
-| P2-05 | Notifications | In-app notification center for assignments/status changes | Reduces missed updates | Notification feed with read/unread state and deep links |
-| P2-06 | Team | Domain workspace management and member directory API | Better assignee discovery and policy control | Directory endpoint + role-aware assignment controls |
+### Baseline auth endpoints
 
-## Execution Order Recommendation
+1. `POST /api/v1/auth/signup`
+2. `POST /api/v1/auth/login/password`
+3. `POST /api/v1/auth/logout`
+4. `GET /api/v1/me`
+5. `POST /api/v1/auth/passkeys/register/start`
+6. `POST /api/v1/auth/passkeys/register/finish`
+7. `POST /api/v1/auth/passkeys/login/start`
+8. `POST /api/v1/auth/passkeys/login/finish`
+9. `POST /api/v1/auth/ws-token`
 
-1. Ship all `P0` items first and re-run full CI + smoke.
-2. Pull `P1-01`, `P1-04`, `P1-05`, `P1-10` next for stability.
-3. Pull the remaining `P1` items based on capacity.
-4. Start `P2` only after the Phase 5 exit gate is formally met.
+## Acceptance Scenarios
 
-## Phase 5 Exit Definition (Proposed)
+1. Password signup/login create and restore session correctly.
+2. Passkey registration/login works with one-time challenge consumption.
+3. Invalid issuer/audience/signature/expiry paths return consistent `401` envelopes.
+4. Business endpoints continue functioning with `app_users` identity.
+5. WS auth works via cookie and via minted ws bearer token.
+6. CI/smoke checks pass without Supabase/authentik auth dependencies.
 
-Phase 5 can be marked complete when all are true:
+## Deferred Scope (Explicit)
 
-1. `P0-03` through `P0-10` are done and merged.
-2. CI is green on backend and frontend checks.
-3. Staging deploy + smoke pass on the same commit.
-4. `docs/frontend_functionality.md`, `docs/PLAN.md`, and `README.md` are consistent.
-5. Realtime collaboration scenarios pass automated integration tests.
+- OIDC/Entra runtime integration (Phase D).
+- Entra tenant configuration and group sync.
+- Email verification enforcement.

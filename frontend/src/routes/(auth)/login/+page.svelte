@@ -16,10 +16,11 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
-  import { clearClientAuthState, setAccessTokenCookie } from '$lib/auth/session';
-  import { debugErrorDetails, logError, logInfo, logWarn } from '$lib/debug';
+  import { clearClientAuthState } from '$lib/auth/session';
+  import { ensureCsrfToken } from '$lib/auth/csrf';
+  import { debugErrorDetails, logError, logInfo } from '$lib/debug';
   import { signInWithPasskey } from '$lib/auth/passkeys';
-  import { getSupabaseClient } from '$lib/supabase/client';
+  import type { ApiErrorEnvelope } from '$lib/types';
 
   let email = $state('');
   let password = $state('');
@@ -53,79 +54,83 @@
     signinMode = 'password';
   }
 
+  function parseApiError(
+    payload: unknown,
+    fallback: string
+  ): string {
+    if (!payload || typeof payload !== 'object') {
+      return fallback;
+    }
+
+    const envelope = payload as Partial<ApiErrorEnvelope>;
+    if (envelope.error && typeof envelope.error.message === 'string') {
+      return envelope.error.message;
+    }
+
+    return fallback;
+  }
+
+  async function postAuthJson(
+    path: string,
+    body: Record<string, unknown>
+  ): Promise<void> {
+    const response = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(parseApiError(payload, `Auth request failed (${response.status})`));
+    }
+  }
+
   async function signInWithPassword(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     errorMessage = '';
     logInfo('auth.login', 'Password sign-in submitted', { email });
 
-    const client = getSupabaseClient();
-    if (!client) {
-      errorMessage =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
-      return;
-    }
-
     loading = true;
+    try {
+      await postAuthJson('/api/auth/login/password', {
+        email: email.trim().toLowerCase(),
+        password
+      });
 
-    const { data, error } = await client.auth.signInWithPassword({ email, password });
-
-    if (error || !data.session) {
+      await ensureCsrfToken();
+      const next = getSafeNextPath();
+      logInfo('auth.login', 'Password sign-in succeeded', { email, next });
+      await goto(next);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid email or password';
       logInfo('auth.login', 'Password sign-in failed', {
         email,
-        error: error?.message ?? null
+        error: message
       });
-      errorMessage = error?.message ?? 'Invalid email or password';
+      errorMessage = message;
       loading = false;
-      return;
     }
-
-    setAccessTokenCookie(data.session.access_token);
-
-    const next = getSafeNextPath();
-    logInfo('auth.login', 'Password sign-in succeeded', { email, next });
-    await goto(next);
   }
 
   async function socialLogin(provider: 'azure'): Promise<void> {
     errorMessage = '';
     logInfo('auth.login', 'OAuth sign-in requested', { provider });
-
-    const client = getSupabaseClient();
-    if (!client) {
-      errorMessage =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
-      return;
-    }
-
-    const { error } = await client.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/`
-      }
-    });
-
-    if (error) {
-      logInfo('auth.login', 'OAuth sign-in failed', { provider, error: error.message });
-      errorMessage = error.message;
-    }
+    errorMessage = 'Microsoft sign-in is disabled in the current Phase 5 baseline.';
   }
 
   async function passkeySignIn(): Promise<void> {
     errorMessage = '';
     logInfo('auth.login', 'Passkey sign-in requested');
 
-    const client = getSupabaseClient();
-    if (!client) {
-      errorMessage =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
-      return;
-    }
-
     loading = true;
 
     try {
-      const accessToken = await signInWithPasskey(client);
-      setAccessTokenCookie(accessToken);
+      await signInWithPasskey();
+      await ensureCsrfToken();
       const next = getSafeNextPath();
       logInfo('auth.login', 'Passkey sign-in succeeded', { next });
       await goto(next);
@@ -141,41 +146,9 @@
 
   onMount(async () => {
     logInfo('auth.login', 'Login page mounted');
-    const client = getSupabaseClient();
-    if (!client) return;
 
     const reason = readQueryParam('reason');
     if (reason === 'session-expired') {
-      logInfo('auth.login', 'Session-expired redirect detected; clearing local auth state');
-      try {
-        await client.auth.signOut({ scope: 'local' });
-      } catch {
-        // Ignore local sign-out cleanup failures.
-      }
-      clearClientAuthState();
-    }
-
-    try {
-      const { data } = await client.auth.getSession();
-      if (!data.session) {
-        logInfo('auth.login', 'No existing session found on mount');
-        clearClientAuthState();
-        return;
-      }
-
-      setAccessTokenCookie(data.session.access_token);
-      const next = getSafeNextPath();
-      logInfo('auth.login', 'Existing session found; redirecting', { next });
-      await goto(next);
-    } catch (error) {
-      logWarn('auth.login', 'Session check failed on mount; clearing local auth state', {
-        details: debugErrorDetails(error)
-      });
-      try {
-        await client.auth.signOut({ scope: 'local' });
-      } catch {
-        // Ignore local sign-out cleanup failures.
-      }
       clearClientAuthState();
     }
   });

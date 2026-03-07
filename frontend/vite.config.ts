@@ -10,8 +10,7 @@ export default defineConfig({
 	optimizeDeps: {
 		// Keep dev dependency optimization deterministic to avoid stale hashed module URLs
 		// during container startup/reload behind the reverse proxy.
-		holdUntilCrawlEnd: true,
-		exclude: ['@supabase/supabase-js']
+		holdUntilCrawlEnd: true
 	},
 	server: {
 		watch: {

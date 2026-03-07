@@ -1,8 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { asApiError, callBackend } from '$lib/server/backend';
-import { getAccessTokenFromCookies } from '$lib/server/auth-cookie';
+import { asApiError, callBackend, withSessionCookie } from '$lib/server/backend';
 import type {
   ApiEnvelope,
   ApiListEnvelope,
@@ -12,16 +11,25 @@ import type {
   SupportRequest
 } from '$lib/types';
 
-export const load: PageServerLoad = async ({ fetch, params, parent, depends }) => {
-  const { token } = await parent();
+export const load: PageServerLoad = async ({ fetch, params, parent, request, depends }) => {
+  await parent();
+  const cookieHeader = request.headers.get('cookie');
   const requestId = params.id;
   depends(`reqstly:requests:detail:${requestId}`);
 
   const [requestResponse, auditResponse, enumResponse, assigneeResponse] = await Promise.all([
-    callBackend(fetch, token, `/requests/${requestId}`),
-    callBackend(fetch, token, `/requests/${requestId}/audit`),
-    callBackend(fetch, token, '/meta/enums'),
-    callBackend(fetch, token, '/assignees/suggestions?limit=100')
+    callBackend(fetch, `/requests/${requestId}`, withSessionCookie(cookieHeader)),
+    callBackend(
+      fetch,
+      `/requests/${requestId}/audit`,
+      withSessionCookie(cookieHeader)
+    ),
+    callBackend(fetch, '/meta/enums', withSessionCookie(cookieHeader)),
+    callBackend(
+      fetch,
+      '/assignees/suggestions?limit=100',
+      withSessionCookie(cookieHeader)
+    )
   ]);
 
   if (!requestResponse.ok || !requestResponse.json || typeof requestResponse.json !== 'object') {
@@ -58,11 +66,8 @@ export const load: PageServerLoad = async ({ fetch, params, parent, depends }) =
 };
 
 export const actions: Actions = {
-  update: async ({ cookies, fetch, params, request }) => {
-    const token = getAccessTokenFromCookies(cookies);
-    if (!token) {
-      throw redirect(303, '/login?reason=session-expired');
-    }
+  update: async ({ fetch, params, request }) => {
+    const cookieHeader = request.headers.get('cookie');
     const requestId = params.id;
     const form = await request.formData();
 
@@ -75,10 +80,14 @@ export const actions: Actions = {
       assignee_email: String(form.get('assignee_email') ?? '').trim()
     };
 
-    const updateResponse = await callBackend(fetch, token, `/requests/${requestId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload)
-    });
+    const updateResponse = await callBackend(
+      fetch,
+      `/requests/${requestId}`,
+      withSessionCookie(cookieHeader, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      })
+    );
 
     if (updateResponse.ok) {
       return {
@@ -98,16 +107,17 @@ export const actions: Actions = {
     });
   },
 
-  delete: async ({ cookies, fetch, params }) => {
-    const token = getAccessTokenFromCookies(cookies);
-    if (!token) {
-      throw redirect(303, '/login?reason=session-expired');
-    }
+  delete: async ({ fetch, params, request }) => {
+    const cookieHeader = request.headers.get('cookie');
     const requestId = params.id;
 
-    const deleteResponse = await callBackend(fetch, token, `/requests/${requestId}`, {
-      method: 'DELETE'
-    });
+    const deleteResponse = await callBackend(
+      fetch,
+      `/requests/${requestId}`,
+      withSessionCookie(cookieHeader, {
+        method: 'DELETE'
+      })
+    );
 
     if (!deleteResponse.ok) {
       const apiError = asApiError(deleteResponse.json);

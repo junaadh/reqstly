@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE_COMPOSE_FILE="${BASE_COMPOSE_FILE:-${ROOT_DIR}/infra/supabase/docker-compose.yml}"
-OVERLAY_COMPOSE_FILE="${OVERLAY_COMPOSE_FILE:-${ROOT_DIR}/infra/docker-compose.dev.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-${ROOT_DIR}/infra/docker-compose.dev.yml}"
+EXTRA_COMPOSE_FILE="${EXTRA_COMPOSE_FILE:-}"
 
 if [[ -n "${ENV_FILE:-}" ]]; then
   SELECTED_ENV_FILE="${ENV_FILE}"
@@ -16,17 +16,17 @@ else
   exit 1
 fi
 
-if [[ ! -f "${BASE_COMPOSE_FILE}" ]]; then
-  echo "Base compose file not found: ${BASE_COMPOSE_FILE}"
+if [[ ! -f "${COMPOSE_FILE}" ]]; then
+  echo "Compose file not found: ${COMPOSE_FILE}"
   exit 1
 fi
 
-if [[ ! -f "${OVERLAY_COMPOSE_FILE}" ]]; then
-  echo "Overlay compose file not found: ${OVERLAY_COMPOSE_FILE}"
+if [[ -n "${EXTRA_COMPOSE_FILE}" && ! -f "${EXTRA_COMPOSE_FILE}" ]]; then
+  echo "Extra compose file not found: ${EXTRA_COMPOSE_FILE}"
   exit 1
 fi
 
-MIN_DOCKER_MEMORY_GB="${MIN_DOCKER_MEMORY_GB:-4}"
+MIN_DOCKER_MEMORY_GB="${MIN_DOCKER_MEMORY_GB:-2}"
 MIN_DOCKER_CPUS="${MIN_DOCKER_CPUS:-2}"
 
 if ! docker info >/dev/null 2>&1; then
@@ -41,17 +41,20 @@ if [[ "${DOCKER_MEM_BYTES}" =~ ^[0-9]+$ ]] && [[ "${DOCKER_CPU_COUNT}" =~ ^[0-9]
   REQUIRED_MEM_BYTES=$((MIN_DOCKER_MEMORY_GB * 1000 * 1000 * 1000))
   if (( DOCKER_MEM_BYTES < REQUIRED_MEM_BYTES || DOCKER_CPU_COUNT < MIN_DOCKER_CPUS )); then
     CURRENT_MEM_GB="$(awk -v mem="${DOCKER_MEM_BYTES}" 'BEGIN { printf "%.1f", mem/1024/1024/1024 }')"
-    echo "Docker VM resources are too low for full Supabase stack."
+    echo "Docker VM resources are too low for the development stack."
     echo "Detected: ${CURRENT_MEM_GB}GB RAM, ${DOCKER_CPU_COUNT} CPU(s)"
     echo "Required: >= ${MIN_DOCKER_MEMORY_GB}GB RAM, >= ${MIN_DOCKER_CPUS} CPU(s)"
-    echo "Suggested fix (Colima): colima stop && colima start --cpu ${MIN_DOCKER_CPUS} --memory ${MIN_DOCKER_MEMORY_GB} --disk 100"
+    echo "Suggested fix (Colima): colima stop && colima start"
+    echo "Optional sizing override: colima start --cpu <cores> --memory <gb> --disk 100"
     exit 1
   fi
 fi
 
 echo "Starting dev stack"
-echo "- base compose: ${BASE_COMPOSE_FILE}"
-echo "- overlay compose: ${OVERLAY_COMPOSE_FILE}"
+echo "- compose: ${COMPOSE_FILE}"
+if [[ -n "${EXTRA_COMPOSE_FILE}" ]]; then
+  echo "- extra compose: ${EXTRA_COMPOSE_FILE}"
+fi
 echo "- env: ${SELECTED_ENV_FILE}"
 
 COMPOSE_WAIT_TIMEOUT="${COMPOSE_WAIT_TIMEOUT:-900}"
@@ -69,9 +72,12 @@ BACKEND_HEALTH_CHECK="${BACKEND_HEALTH_CHECK:-auto}"
 compose_cmd=(
   docker compose
   --env-file "${SELECTED_ENV_FILE}"
-  -f "${BASE_COMPOSE_FILE}"
-  -f "${OVERLAY_COMPOSE_FILE}"
+  -f "${COMPOSE_FILE}"
 )
+
+if [[ -n "${EXTRA_COMPOSE_FILE}" ]]; then
+  compose_cmd+=(-f "${EXTRA_COMPOSE_FILE}")
+fi
 
 compose_up_args=(up -d --remove-orphans --wait --wait-timeout "${COMPOSE_WAIT_TIMEOUT}")
 if [[ "${COMPOSE_BUILD}" == "1" ]]; then

@@ -14,10 +14,10 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
-  import { clearClientAuthState, setAccessTokenCookie } from '$lib/auth/session';
-  import { enrollPasskeyFactor } from '$lib/auth/passkeys';
-  import { debugErrorDetails, logWarn } from '$lib/debug';
-  import { getSupabaseClient } from '$lib/supabase/client';
+  import { clearClientAuthState } from '$lib/auth/session';
+  import { ensureCsrfToken } from '$lib/auth/csrf';
+  import { signUpWithPasskey } from '$lib/auth/passkeys';
+  import type { ApiErrorEnvelope } from '$lib/types';
 
   let displayName = $state('');
   let email = $state('');
@@ -48,84 +48,66 @@
     passkeyState = 'idle';
   }
 
-  function isExistingUserError(message: string): boolean {
-    const value = message.toLowerCase();
-    return value.includes('already') || value.includes('registered') || value.includes('exists');
+  function parseApiError(
+    payload: unknown,
+    fallback: string
+  ): string {
+    if (!payload || typeof payload !== 'object') {
+      return fallback;
+    }
+
+    const envelope = payload as Partial<ApiErrorEnvelope>;
+    if (envelope.error && typeof envelope.error.message === 'string') {
+      return envelope.error.message;
+    }
+
+    return fallback;
   }
 
-  function createProvisionalPassword(): string {
-    return `${crypto.randomUUID()}Aa!1`;
-  }
+  async function postAuthJson(
+    path: string,
+    body: Record<string, unknown>
+  ): Promise<void> {
+    const response = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
 
-  function isMissingJwtUserError(message: string): boolean {
-    const normalized = message.toLowerCase();
-    return (
-      normalized.includes('user from sub claim in jwt does not exist') ||
-      (normalized.includes('sub claim') && normalized.includes('does not exist'))
-    );
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(parseApiError(payload, `Auth request failed (${response.status})`));
+    }
   }
 
   async function signUp(event: SubmitEvent): Promise<void> {
     event.preventDefault();
 
-    const client = getSupabaseClient();
-    if (!client) {
-      errorMessage =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
-      return;
-    }
-
     loading = true;
     errorMessage = '';
     infoMessage = '';
 
-    const { data, error } = await client.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          display_name: displayName
-        }
-      }
-    });
+    try {
+      await postAuthJson('/api/auth/signup', {
+        display_name: displayName.trim(),
+        email: email.trim().toLowerCase(),
+        password
+      });
 
-    if (error) {
-      errorMessage = error.message;
-      loading = false;
-      return;
-    }
-
-    if (data.session?.access_token) {
-      setAccessTokenCookie(data.session.access_token);
+      await ensureCsrfToken();
       await goto('/');
-      return;
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : 'Unable to create account.';
+      loading = false;
     }
-
-    clearClientAuthState();
-    infoMessage = 'Check your email for a confirmation link before signing in.';
-    loading = false;
   }
 
-  async function socialLogin(provider: 'azure'): Promise<void> {
-    const client = getSupabaseClient();
-    if (!client) {
-      errorMessage =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
-      return;
-    }
-
+  async function socialLogin(_provider: 'azure'): Promise<void> {
     errorMessage = '';
-
-    const { error } = await client.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/`
-      }
-    });
-
-    if (error) {
-      errorMessage = error.message;
-    }
+    errorMessage = 'Microsoft sign-in is disabled in the current Phase 5 baseline.';
   }
 
   async function startPasskeySignup(): Promise<void> {
@@ -137,10 +119,8 @@
       return;
     }
 
-    const client = getSupabaseClient();
-    if (!client) {
-      errorMessage =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
+    if (!userEmail.includes('@')) {
+      errorMessage = 'Enter a valid email address.';
       return;
     }
 
@@ -150,88 +130,8 @@
     passkeyState = 'loading';
 
     try {
-      let session: Awaited<ReturnType<typeof client.auth.getSession>>['data']['session'] = null;
-      try {
-        const {
-          data: { session: currentSession }
-        } = await client.auth.getSession();
-        session = currentSession;
-      } catch (error) {
-        logWarn('auth.signup', 'Passkey signup session check failed; clearing local auth state', {
-          details: debugErrorDetails(error)
-        });
-        await client.auth.signOut({ scope: 'local' }).catch(() => undefined);
-        clearClientAuthState();
-      }
-
-      let activeSession = session;
-      if (activeSession) {
-        const { error: userError } = await client.auth.getUser();
-        if (userError) {
-          if (isMissingJwtUserError(userError.message)) {
-            await client.auth.signOut();
-            clearClientAuthState();
-            activeSession = null;
-          } else {
-            throw userError;
-          }
-        }
-      }
-
-      if (activeSession) {
-        const signedInEmail = activeSession.user.email?.toLowerCase() ?? '';
-        if (signedInEmail.length > 0 && signedInEmail !== userEmail) {
-          throw new Error(
-            'You are signed in with a different email. Sign out first or use the current account email to link passkey.'
-          );
-        }
-      } else {
-        const { data, error } = await client.auth.signUp({
-          email: userEmail,
-          password: createProvisionalPassword(),
-          options: {
-            data: {
-              display_name: fullName
-            }
-          }
-        });
-
-        if (error) {
-          if (isExistingUserError(error.message)) {
-            const { error: otpError } = await client.auth.signInWithOtp({
-              email: userEmail,
-              options: {
-                shouldCreateUser: false,
-                emailRedirectTo: `${window.location.origin}/login?reason=link-passkey`
-              }
-            });
-
-            if (otpError) {
-              infoMessage =
-                'This email is already registered. Sign in with your existing method, then add passkey from Profile.';
-            } else {
-              infoMessage =
-                'This email already exists. We sent a secure email link. Sign in, then add passkey from Profile to complete linking.';
-            }
-
-            signupMode = 'email';
-            return;
-          }
-
-          throw error;
-        }
-
-        if (data.session?.access_token) {
-          setAccessTokenCookie(data.session.access_token);
-        } else {
-          infoMessage =
-            'Check your email to confirm this address. After signing in, add passkey from Profile.';
-          signupMode = 'email';
-          return;
-        }
-      }
-
-      await enrollPasskeyFactor(client, `${fullName} Passkey`);
+      await signUpWithPasskey(userEmail, fullName, `${fullName} Passkey`);
+      await ensureCsrfToken();
       infoMessage = 'Passkey created successfully. Redirecting to dashboard...';
       passkeyState = 'success';
       passkeyLoading = false;
@@ -246,6 +146,12 @@
       }
     }
   }
+
+  $effect(() => {
+    if (signupMode === 'email') {
+      clearClientAuthState();
+    }
+  });
 </script>
 
 <section class="min-h-screen bg-[hsl(var(--background))] p-0 lg:grid lg:grid-cols-2">
@@ -335,7 +241,7 @@
             <Label for="password">Password</Label>
             <div class="relative">
               <Lock class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="password" type="password" bind:value={password} minlength={8} required disabled={loading} class="pl-9" />
+              <Input id="password" type="password" bind:value={password} minlength={12} required disabled={loading} class="pl-9" />
             </div>
           </div>
 

@@ -1,14 +1,18 @@
 import type { PageServerLoad } from './$types';
 
-import { callBackend } from '$lib/server/backend';
+import { callBackend, withSessionCookie } from '$lib/server/backend';
 import type { ApiListEnvelope, SupportRequest } from '$lib/types';
 
 async function fetchStatusTotal(
   fetchFn: typeof fetch,
-  token: string,
+  cookieHeader: string | null,
   status: 'open' | 'in_progress' | 'resolved'
 ): Promise<number> {
-  const response = await callBackend(fetchFn, token, `/requests?status=${status}&page=1&limit=1`);
+  const response = await callBackend(
+    fetchFn,
+    `/requests?status=${status}&page=1&limit=1`,
+    withSessionCookie(cookieHeader)
+  );
 
   if (!response.ok || !response.json || typeof response.json !== 'object') {
     return 0;
@@ -18,16 +22,21 @@ async function fetchStatusTotal(
   return payload.meta?.total ?? 0;
 }
 
-export const load: PageServerLoad = async ({ fetch, parent, depends }) => {
+export const load: PageServerLoad = async ({ fetch, parent, depends, request }) => {
   depends('reqstly:dashboard');
 
-  const { token } = await parent();
+  await parent();
+  const cookieHeader = request.headers.get('cookie');
 
   const [openTotal, inProgressTotal, resolvedTotal, recentResponse] = await Promise.all([
-    fetchStatusTotal(fetch, token, 'open'),
-    fetchStatusTotal(fetch, token, 'in_progress'),
-    fetchStatusTotal(fetch, token, 'resolved'),
-    callBackend(fetch, token, '/requests?page=1&limit=6&sort=-updated_at')
+    fetchStatusTotal(fetch, cookieHeader, 'open'),
+    fetchStatusTotal(fetch, cookieHeader, 'in_progress'),
+    fetchStatusTotal(fetch, cookieHeader, 'resolved'),
+    callBackend(
+      fetch,
+      '/requests?page=1&limit=6&sort=-updated_at',
+      withSessionCookie(cookieHeader)
+    )
   ]);
 
   const recentRequests =

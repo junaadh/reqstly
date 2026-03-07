@@ -22,8 +22,8 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -x "${ROOT_DIR}/scripts/generate-supabase-dev-keys.sh" ]]; then
-  echo "Missing executable helper: ${ROOT_DIR}/scripts/generate-supabase-dev-keys.sh"
+if [[ ! -x "${ROOT_DIR}/scripts/generate-dev-secrets.sh" ]]; then
+  echo "Missing executable helper: ${ROOT_DIR}/scripts/generate-dev-secrets.sh"
   exit 1
 fi
 
@@ -43,8 +43,8 @@ else
 fi
 
 if [[ "${ROTATE_KEYS}" == "1" ]]; then
-  echo "Generating Supabase development secrets..."
-  "${ROOT_DIR}/scripts/generate-supabase-dev-keys.sh" "${ENV_FILE}"
+  echo "Generating development secrets..."
+  "${ROOT_DIR}/scripts/generate-dev-secrets.sh" "${ENV_FILE}"
 else
   echo "Skipping secret rotation (set ROTATE_KEYS=1 to rotate)."
 fi
@@ -64,7 +64,7 @@ Recommended next steps:
 1. Trust local root CA (macOS, one-time):
    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${ROOT_DIR}/infra/proxy/caddy/certs/dev/reqstly-dev-rootCA.pem"
 2. Start Docker VM (example for Colima):
-   colima start --cpu 4 --memory 8 --disk 100
+   colima start
 3. Start the development stack:
    ./scripts/up-dev.sh
 4. Run smoke checks:

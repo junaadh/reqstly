@@ -1,367 +1,496 @@
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import type { Session, SupabaseClient } from '@supabase/supabase-js';
 
-import { debugErrorDetails, logDebug, logError, logInfo, logWarn } from '$lib/debug';
-import { setAccessTokenCookie } from '$lib/auth/session';
-import { supabaseAnonKey, supabaseUrl } from '$lib/config';
+import { ensureCsrfToken } from '$lib/auth/csrf';
+import { logDebug, logInfo, logWarn } from '$lib/debug';
+import type { ApiErrorEnvelope, ApiEnvelope } from '$lib/types';
 
-interface ErrorPayload {
-  msg?: string;
-  message?: string;
-  error?: string;
-  error_description?: string;
-  code?: string;
+interface PasskeyChallengeResponse {
+  challenge_id: string;
+  options: unknown;
 }
 
-interface ChallengePayload {
-  id?: string;
-  type?: string;
-  webauthn?: {
-    type?: 'create' | 'request';
-    credential_options?: {
-      publicKey?: Record<string, unknown>;
-    };
-  };
-}
-
-interface TokenPayload {
-  access_token?: string;
-  refresh_token?: string;
-  session?: {
-    access_token?: string;
-    refresh_token?: string;
-  };
-}
-
-export interface PasskeyFactor {
+export interface PasskeyCredentialSummary {
   id: string;
-  factor_type: string;
-  status: string;
-  friendly_name?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  nickname: string | null;
+  created_at: string;
+  first_used_at: string | null;
+  last_used_at: string | null;
 }
 
-interface MfaListFactorsPayload {
-  all?: PasskeyFactor[];
-  webauthn?: PasskeyFactor[];
+export interface PasskeyStatsSummary {
+  passkey_count: number;
+  first_registered_at: string | null;
+  first_used_at: string | null;
+  last_used_at: string | null;
 }
 
-function authBaseUrl(): string {
-  return `${supabaseUrl.replace(/\/+$/, '')}/auth/v1`;
+export interface PasskeyListResponse {
+  credentials: PasskeyCredentialSummary[];
+  stats: PasskeyStatsSummary;
 }
 
-function ensureSupabasePublicConfig(): void {
-  if (supabaseUrl.trim().length === 0 || supabaseAnonKey.trim().length === 0) {
-    throw new Error('Supabase public config is missing.');
-  }
-}
-
-function toErrorMessage(payload: unknown, fallback: string): string {
-  if (!payload || typeof payload !== 'object') return fallback;
-  const data = payload as ErrorPayload;
-  return data.msg ?? data.message ?? data.error_description ?? data.error ?? fallback;
-}
-
-async function authRequest<T>(
-  path: string,
-  init: RequestInit = {},
-  accessToken?: string
-): Promise<T> {
-  logDebug('auth.passkeys', 'Calling Supabase auth endpoint', {
-    path,
-    method: init.method ?? 'GET',
-    hasAccessToken: Boolean(accessToken)
-  });
-  ensureSupabasePublicConfig();
-
-  const headers = new Headers(init.headers ?? {});
-  headers.set('Content-Type', 'application/json');
-  headers.set('apikey', supabaseAnonKey);
-
-  if (accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`);
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
   }
 
-  const response = await fetch(`${authBaseUrl()}${path}`, {
-    ...init,
-    headers
-  });
-
-  let payload: unknown = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
-    logWarn('auth.passkeys', 'Supabase auth endpoint failed', {
-      path,
-      status: response.status,
-      payload
-    });
-    throw new Error(toErrorMessage(payload, `Auth request failed (${response.status})`));
-  }
-
-  return payload as T;
+  return value as Record<string, unknown>;
 }
 
-async function appRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  logDebug('auth.passkeys', 'Calling app passkey endpoint', {
-    path,
-    method: init.method ?? 'GET'
-  });
-  const headers = new Headers(init.headers ?? {});
-  headers.set('Content-Type', 'application/json');
-
-  const response = await fetch(path, {
-    ...init,
-    headers
-  });
-
-  let payload: unknown = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
+function asArray(value: unknown): unknown[] | null {
+  if (!Array.isArray(value)) {
+    return null;
   }
 
-  if (!response.ok) {
-    logInfo('auth.passkeys', 'App passkey endpoint failed', {
-      path,
-      status: response.status,
-      payload
-    });
-    throw new Error(toErrorMessage(payload, `Passkey request failed (${response.status})`));
+  return value;
+}
+
+function readString(
+  source: Record<string, unknown>,
+  keys: string[]
+): string | null {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
   }
 
-  return payload as T;
+  return null;
 }
 
-function extractTokens(payload: unknown): { accessToken: string; refreshToken: string } | null {
-  if (!payload || typeof payload !== 'object') return null;
-  const tokenPayload = payload as TokenPayload;
-
-  const accessToken = tokenPayload.access_token ?? tokenPayload.session?.access_token;
-  const refreshToken = tokenPayload.refresh_token ?? tokenPayload.session?.refresh_token;
-
-  if (!accessToken || !refreshToken) return null;
-
-  return { accessToken, refreshToken };
-}
-
-function isLikelyJwtToken(value: string): boolean {
-  return value.split('.').length === 3;
-}
-
-async function clearLocalSupabaseSession(client: SupabaseClient): Promise<void> {
-  try {
-    await client.auth.signOut({ scope: 'local' });
-  } catch (error) {
-    logWarn('auth.passkeys', 'Unable to clear local Supabase session state', {
-      details: debugErrorDetails(error)
-    });
-  }
-}
-
-async function applySupabaseSession(
-  client: SupabaseClient,
-  tokens: { accessToken: string; refreshToken: string }
-): Promise<Session> {
-  const { data, error } = await client.auth.setSession({
-    access_token: tokens.accessToken,
-    refresh_token: tokens.refreshToken
-  });
-
-  if (error || !data.session) {
-    throw new Error(error?.message ?? 'Unable to store Supabase session.');
+function readRecord(
+  source: Record<string, unknown>,
+  keys: string[]
+): Record<string, unknown> | null {
+  for (const key of keys) {
+    const value = asRecord(source[key]);
+    if (value) {
+      return value;
+    }
   }
 
-  setAccessTokenCookie(data.session.access_token);
-  return data.session;
+  return null;
 }
 
-function getRpContext(): { rpId: string; rpOrigins: string[] } {
+function readArray(
+  source: Record<string, unknown>,
+  keys: string[]
+): unknown[] | null {
+  for (const key of keys) {
+    const value = asArray(source[key]);
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function parseOptionsRecord(options: unknown): Record<string, unknown> {
+  if (typeof options === 'string') {
+    try {
+      const parsed = JSON.parse(options) as unknown;
+      const parsedRecord = asRecord(parsed);
+      if (parsedRecord) {
+        return parsedRecord;
+      }
+    } catch {
+      // Fall through to validation error below.
+    }
+  }
+
+  const record = asRecord(options);
+  if (!record) {
+    throw new Error('Passkey options response was malformed.');
+  }
+
+  return record;
+}
+
+function unwrapPublicKeyOptions(
+  options: unknown,
+  mode: 'registration' | 'authentication'
+): Record<string, unknown> {
+  let current = parseOptionsRecord(options);
+
+  for (let depth = 0; depth < 3; depth += 1) {
+    const challenge = readString(current, ['challenge']);
+    const hasRegistrationUserId =
+      mode === 'registration'
+        ? readString(readRecord(current, ['user']) ?? {}, ['id']) !== null
+        : true;
+
+    if (challenge && hasRegistrationUserId) {
+      return current;
+    }
+
+    const nested = readRecord(current, ['publicKey', 'public_key']);
+    if (!nested) {
+      return current;
+    }
+    current = nested;
+  }
+
+  return current;
+}
+
+function normalizeCredentialDescriptors(list: unknown[] | null): unknown[] {
+  if (!list) {
+    return [];
+  }
+
+  const normalized: unknown[] = [];
+
+  for (const entry of list) {
+    const record = asRecord(entry);
+    if (!record) {
+      continue;
+    }
+
+    const id = readString(record, ['id', 'credentialId', 'credential_id']);
+    if (!id) {
+      continue;
+    }
+
+    const descriptor: Record<string, unknown> = {
+      id,
+      type: typeof record.type === 'string' ? record.type : 'public-key'
+    };
+
+    const transports = asArray(record.transports)?.filter(
+      (value): value is string => typeof value === 'string'
+    );
+    if (transports && transports.length > 0) {
+      descriptor.transports = transports;
+    }
+
+    normalized.push(descriptor);
+  }
+
+  return normalized;
+}
+
+function normalizeRegistrationOptions(options: unknown): Record<string, unknown> {
+  const normalized = { ...unwrapPublicKeyOptions(options, 'registration') };
+  const challenge = readString(normalized, ['challenge']);
+  if (!challenge) {
+    throw new Error('Passkey registration challenge was missing from server response.');
+  }
+
+  const user = readRecord(normalized, ['user']) ?? {};
+  const userId = readString(user, ['id', 'user_id', 'userId']);
+  if (!userId) {
+    throw new Error('Passkey registration user id was missing from server response.');
+  }
+
+  const userName = readString(user, ['name', 'email']);
+  const displayName = readString(user, ['displayName', 'display_name', 'name']);
+
+  normalized.challenge = challenge;
+  normalized.user = {
+    ...user,
+    id: userId,
+    ...(userName ? { name: userName } : {}),
+    ...(displayName ? { displayName } : {})
+  };
+
+  const excludeCredentials = normalizeCredentialDescriptors(
+    readArray(normalized, ['excludeCredentials', 'exclude_credentials'])
+  );
+  normalized.excludeCredentials = excludeCredentials;
+  delete normalized.exclude_credentials;
+
+  return normalized;
+}
+
+function normalizeAuthenticationOptions(options: unknown): Record<string, unknown> {
+  const normalized = { ...unwrapPublicKeyOptions(options, 'authentication') };
+  const challenge = readString(normalized, ['challenge']);
+  if (!challenge) {
+    throw new Error('Passkey authentication challenge was missing from server response.');
+  }
+
+  normalized.challenge = challenge;
+
+  const allowCredentials = normalizeCredentialDescriptors(
+    readArray(normalized, ['allowCredentials', 'allow_credentials'])
+  );
+  if (
+    Array.isArray(normalized.allowCredentials) ||
+    Array.isArray(normalized.allow_credentials)
+  ) {
+    normalized.allowCredentials = allowCredentials;
+  }
+  delete normalized.allow_credentials;
+
+  return normalized;
+}
+
+function summarizeOptions(options: Record<string, unknown>): Record<string, unknown> {
+  const user = asRecord(options.user);
+  const allowCredentials = asArray(options.allowCredentials);
+  const excludeCredentials = asArray(options.excludeCredentials);
+
   return {
-    rpId: window.location.hostname,
-    rpOrigins: [window.location.origin]
+    keys: Object.keys(options),
+    hasChallenge: typeof options.challenge === 'string',
+    hasUserId: typeof user?.id === 'string',
+    allowCredentialsCount: allowCredentials?.length ?? 0,
+    excludeCredentialsCount: excludeCredentials?.length ?? 0
   };
 }
 
-export async function signInWithPasskey(client: SupabaseClient): Promise<string> {
-  logInfo('auth.passkeys', 'Starting passkey sign-in');
-  const options = await appRequest<Record<string, unknown>>('/auth/webauthn/passkey', {
-    method: 'POST',
-    body: JSON.stringify({})
-  });
-  logDebug('auth.passkeys', 'Received passkey challenge', {
-    hasChallenge: typeof options.challenge === 'string',
-    rpId: typeof options.rpId === 'string' ? options.rpId : null
-  });
-
-  const authenticationResponse = await startAuthentication({
-    optionsJSON: options as unknown as Parameters<typeof startAuthentication>[0]['optionsJSON']
-  });
-  logDebug('auth.passkeys', 'Passkey assertion produced', {
-    hasId: typeof authenticationResponse.id === 'string',
-    responseKeys:
-      typeof authenticationResponse.response === 'object' && authenticationResponse.response !== null
-        ? Object.keys(authenticationResponse.response)
-        : []
-  });
-
-  const verification = await appRequest<Record<string, unknown>>('/auth/webauthn/passkey/verify', {
-    method: 'POST',
-    body: JSON.stringify(authenticationResponse)
-  });
-
-  const tokens = extractTokens(verification);
-  if (!tokens) {
-    logError('auth.passkeys', 'Passkey verify response did not include tokens', verification);
-    throw new Error('Passkey verification succeeded but no session tokens were returned.');
+function mapWebauthnError(error: unknown): Error {
+  if (!(error instanceof Error)) {
+    return new Error('Passkey ceremony failed. Please try again.');
   }
 
-  if (isLikelyJwtToken(tokens.refreshToken)) {
-    // App-issued passkey JWTs are valid as bearer access tokens but not as Supabase refresh tokens.
-    logInfo('auth.passkeys', 'Passkey flow returned app-issued token pair; using cookie auth mode');
-    await clearLocalSupabaseSession(client);
-    setAccessTokenCookie(tokens.accessToken);
-    return tokens.accessToken;
-  }
-
-  try {
-    const session = await applySupabaseSession(client, tokens);
-    logInfo('auth.passkeys', 'Passkey sign-in completed with Supabase session');
-    return session.access_token;
-  } catch (error) {
-    // Fallback for deployments that don't accept custom refresh tokens.
-    logInfo('auth.passkeys', 'Supabase setSession failed; falling back to cookie token', {
-      error: debugErrorDetails(error)
-    });
-    await clearLocalSupabaseSession(client);
-    setAccessTokenCookie(tokens.accessToken);
-    return tokens.accessToken;
-  }
-}
-
-export async function enrollPasskeyFactor(
-  client: SupabaseClient,
-  friendlyName = 'Reqstly Passkey'
-): Promise<Session> {
-  logInfo('auth.passkeys', 'Starting passkey enrollment', { friendlyName });
-  const {
-    data: { session }
-  } = await client.auth.getSession();
-
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error('You must be signed in before adding a passkey.');
-  }
-
-  const enroll = await authRequest<{ id?: string }>(
-    '/factors',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        factor_type: 'webauthn',
-        friendly_name: friendlyName
-      })
-    },
-    accessToken
-  );
-
-  if (!enroll.id) {
-    logError('auth.passkeys', 'Passkey enrollment did not return factor id', enroll);
-    throw new Error('Passkey enrollment failed to start.');
-  }
-
-  const rp = getRpContext();
-
-  const challenge = await authRequest<ChallengePayload>(
-    `/factors/${enroll.id}/challenge`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ webauthn: rp })
-    },
-    accessToken
-  );
-
-  const challengeId = challenge.id;
-  const ceremonyType = challenge.webauthn?.type;
-  const registrationOptions = challenge.webauthn?.credential_options?.publicKey;
-
-  if (!challengeId || ceremonyType !== 'create' || !registrationOptions) {
-    logError('auth.passkeys', 'Supabase challenge payload invalid', challenge);
-    throw new Error('Supabase returned invalid WebAuthn registration options.');
-  }
-
-  const credentialResponse = await startRegistration({
-    optionsJSON:
-      registrationOptions as unknown as Parameters<typeof startRegistration>[0]['optionsJSON']
-  });
-
-  const verification = await authRequest<Record<string, unknown>>(
-    `/factors/${enroll.id}/verify`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        challenge_id: challengeId,
-        webauthn: {
-          ...rp,
-          type: ceremonyType,
-          credential_response: credentialResponse
-        }
-      })
-    },
-    accessToken
-  );
-
-  const tokens = extractTokens(verification);
-  if (!tokens) {
-    logError('auth.passkeys', 'Passkey enrollment verify did not return tokens', verification);
-    throw new Error('Passkey was created but updated session tokens were not returned.');
-  }
-
-  logInfo('auth.passkeys', 'Passkey enrollment verified; applying session');
-  return applySupabaseSession(client, tokens);
-}
-
-export async function listPasskeyFactors(client?: SupabaseClient): Promise<PasskeyFactor[]> {
-  logDebug('auth.passkeys', 'Listing passkey factors');
-  if (client) {
-    const { data, error } = (await client.auth.mfa.listFactors()) as {
-      data: MfaListFactorsPayload | null;
-      error: Error | null;
-    };
-
-    if (!error) {
-      const all = Array.isArray(data?.all) ? data.all : [];
-      return all.filter((factor) => factor.factor_type === 'webauthn');
-    }
-
-    if (!/auth session missing/i.test(error.message)) {
-      logWarn('auth.passkeys', 'Failed to list passkey factors', {
-        message: error.message
-      });
-      throw error;
-    }
-
-    logInfo(
-      'auth.passkeys',
-      'Supabase session missing while listing factors; falling back to app passkey endpoint'
+  if (error.message.includes('base64URLString.replace')) {
+    return new Error(
+      'Passkey options from server were malformed. Refresh and try again.'
     );
   }
 
-  const payload = await appRequest<{ factors?: PasskeyFactor[] } | PasskeyFactor[]>(
-    '/auth/webauthn/factors',
-    { method: 'GET' }
-  );
-  const factors = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload.factors)
-      ? payload.factors
-      : [];
+  return error;
+}
 
-  return factors.filter((factor) => factor.factor_type === 'webauthn');
+function parseApiError(
+  payload: unknown,
+  fallback: string
+): string {
+  if (!payload || typeof payload !== 'object') {
+    return fallback;
+  }
+
+  const envelope = payload as Partial<ApiErrorEnvelope>;
+  if (envelope.error && typeof envelope.error.message === 'string') {
+    return envelope.error.message;
+  }
+
+  return fallback;
+}
+
+async function apiRequest<T>(
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
+  const headers = new Headers(init.headers ?? {});
+  if (init.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(path, {
+    ...init,
+    headers,
+    credentials: 'include'
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(parseApiError(payload, `Passkey request failed (${response.status})`));
+  }
+
+  return payload as T;
+}
+
+export async function signInWithPasskey(): Promise<void> {
+  logInfo('auth.passkeys', 'Starting passkey sign-in ceremony');
+  const challenge = await apiRequest<ApiEnvelope<PasskeyChallengeResponse>>(
+    '/api/auth/passkeys/login/start',
+    {
+      method: 'POST',
+      body: JSON.stringify({})
+    }
+  );
+  const optionsJSON = normalizeAuthenticationOptions(challenge.data.options);
+  logDebug(
+    'auth.passkeys',
+    'Passkey sign-in options normalized',
+    summarizeOptions(optionsJSON)
+  );
+
+  let assertion;
+  try {
+    assertion = await startAuthentication({
+      optionsJSON: optionsJSON as unknown as Parameters<
+        typeof startAuthentication
+      >[0]['optionsJSON']
+    });
+  } catch (error) {
+    const mapped = mapWebauthnError(error);
+    logWarn('auth.passkeys', 'Passkey sign-in ceremony failed in browser', {
+      message: mapped.message,
+      options: summarizeOptions(optionsJSON)
+    });
+    throw mapped;
+  }
+
+  await apiRequest<ApiEnvelope<unknown>>('/api/auth/passkeys/login/finish', {
+    method: 'POST',
+    body: JSON.stringify({
+      challenge_id: challenge.data.challenge_id,
+      credential: assertion
+    })
+  });
+
+  logDebug('auth.passkeys', 'Passkey sign-in ceremony completed');
+}
+
+export async function listAccountPasskeys(): Promise<PasskeyListResponse> {
+  const response = await apiRequest<ApiEnvelope<PasskeyCredentialSummary[] | PasskeyListResponse>>(
+    '/api/auth/passkeys',
+    {
+      method: 'GET'
+    }
+  );
+
+  if (Array.isArray(response.data)) {
+    return {
+      credentials: response.data,
+      stats: {
+        passkey_count: response.data.length,
+        first_registered_at: null,
+        first_used_at: null,
+        last_used_at: null
+      }
+    };
+  }
+
+  const payload = response.data as Partial<PasskeyListResponse>;
+  return {
+    credentials: Array.isArray(payload.credentials) ? payload.credentials : [],
+    stats: {
+      passkey_count:
+        typeof payload.stats?.passkey_count === 'number'
+          ? payload.stats.passkey_count
+          : Array.isArray(payload.credentials)
+            ? payload.credentials.length
+            : 0,
+      first_registered_at:
+        typeof payload.stats?.first_registered_at === 'string'
+          ? payload.stats.first_registered_at
+          : null,
+      first_used_at:
+        typeof payload.stats?.first_used_at === 'string'
+          ? payload.stats.first_used_at
+          : null,
+      last_used_at:
+        typeof payload.stats?.last_used_at === 'string'
+          ? payload.stats.last_used_at
+          : null
+    }
+  };
+}
+
+export async function enrollPasskey(
+  nickname = 'Reqstly Passkey'
+): Promise<void> {
+  const csrfToken = await ensureCsrfToken();
+
+  logInfo('auth.passkeys', 'Starting passkey registration ceremony');
+  const challenge = await apiRequest<ApiEnvelope<PasskeyChallengeResponse>>(
+    '/api/auth/passkeys/register/start',
+    {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': csrfToken
+      },
+      body: JSON.stringify({ nickname })
+    }
+  );
+  const optionsJSON = normalizeRegistrationOptions(challenge.data.options);
+  logDebug(
+    'auth.passkeys',
+    'Passkey registration options normalized',
+    summarizeOptions(optionsJSON)
+  );
+
+  let credential;
+  try {
+    credential = await startRegistration({
+      optionsJSON: optionsJSON as unknown as Parameters<
+        typeof startRegistration
+      >[0]['optionsJSON']
+    });
+  } catch (error) {
+    const mapped = mapWebauthnError(error);
+    logWarn('auth.passkeys', 'Passkey registration ceremony failed in browser', {
+      message: mapped.message,
+      options: summarizeOptions(optionsJSON)
+    });
+    throw mapped;
+  }
+
+  await apiRequest<ApiEnvelope<unknown>>('/api/auth/passkeys/register/finish', {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': csrfToken
+    },
+    body: JSON.stringify({
+      challenge_id: challenge.data.challenge_id,
+      credential
+    })
+  });
+
+  logDebug('auth.passkeys', 'Passkey registration ceremony completed');
+}
+
+export async function signUpWithPasskey(
+  email: string,
+  displayName: string,
+  nickname = 'Reqstly Passkey'
+): Promise<void> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedDisplayName = displayName.trim();
+
+  if (normalizedEmail.length === 0 || normalizedDisplayName.length === 0) {
+    throw new Error('Email and display name are required for passkey signup.');
+  }
+
+  logInfo('auth.passkeys', 'Starting passkey signup ceremony');
+  const challenge = await apiRequest<ApiEnvelope<PasskeyChallengeResponse>>(
+    '/api/auth/passkeys/signup/start',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email: normalizedEmail,
+        display_name: normalizedDisplayName,
+        nickname
+      })
+    }
+  );
+  const optionsJSON = normalizeRegistrationOptions(challenge.data.options);
+  logDebug(
+    'auth.passkeys',
+    'Passkey signup options normalized',
+    summarizeOptions(optionsJSON)
+  );
+
+  let credential;
+  try {
+    credential = await startRegistration({
+      optionsJSON: optionsJSON as unknown as Parameters<
+        typeof startRegistration
+      >[0]['optionsJSON']
+    });
+  } catch (error) {
+    const mapped = mapWebauthnError(error);
+    logWarn('auth.passkeys', 'Passkey signup ceremony failed in browser', {
+      message: mapped.message,
+      options: summarizeOptions(optionsJSON)
+    });
+    throw mapped;
+  }
+
+  await apiRequest<ApiEnvelope<unknown>>('/api/auth/passkeys/signup/finish', {
+    method: 'POST',
+    body: JSON.stringify({
+      challenge_id: challenge.data.challenge_id,
+      credential
+    })
+  });
+
+  logDebug('auth.passkeys', 'Passkey signup ceremony completed');
 }

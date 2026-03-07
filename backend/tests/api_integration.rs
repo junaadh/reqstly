@@ -9,14 +9,17 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use reqstly_backend::{AppState, build_app, db};
 use serde::Serialize;
 use serde_json::{Value, json};
-use sqlx::{Executor, PgPool};
+use sha2::{Digest, Sha256};
+use sqlx::PgPool;
+use time::{Duration as TimeDuration, OffsetDateTime};
 use tokio::{sync::mpsc, time::timeout};
 use tower::util::ServiceExt;
+use tower_sessions::{MemoryStore, SessionManagerLayer};
 use url::Url;
 use uuid::Uuid;
 
-const TEST_JWT_SECRET: &str = "integration-test-secret";
-const TEST_JWT_ISSUER: &str = "https://supabase.localhost/auth/v1";
+const TEST_WS_TOKEN_SECRET: &str = "integration-test-secret";
+const TEST_WS_TOKEN_ISSUER: &str = "reqstly.test/ws";
 const DEFAULT_ADMIN_DATABASE_URL: &str = "postgres://postgres:super-secret-and-long-postgres-password@127.0.0.1:54323/postgres";
 
 #[derive(Debug)]
@@ -52,38 +55,45 @@ impl TestContext {
             .await
             .expect("test db should connect");
 
-        bootstrap_supabase_compat(&pool).await;
         db::run_migrations(&pool)
             .await
             .expect("migrations should apply in test db");
 
         let user_id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO auth.users (id, email, raw_user_meta_data)
+            "INSERT INTO app.app_users (id, email, display_name)
              VALUES ($1, $2, $3)",
         )
         .bind(user_id)
         .bind("qa@example.com")
-        .bind(json!({
-            "display_name": "qa-user"
-        }))
+        .bind("qa-user")
         .execute(&pool)
         .await
         .expect("auth user insert should succeed");
 
         let realtime_hub = reqstly_backend::realtime::RealtimeHub::new();
         let token = build_token(user_id);
+        insert_ws_token_issuance(&pool, user_id, &token).await;
         let app = build_app(
             AppState {
                 db: pool.clone(),
-                jwt_secret: TEST_JWT_SECRET.to_string(),
-                jwt_issuer: TEST_JWT_ISSUER.to_string(),
+                ws_token_secret: TEST_WS_TOKEN_SECRET.to_string(),
+                ws_token_issuer: TEST_WS_TOKEN_ISSUER.to_string(),
+                passkey: reqstly_backend::auth::PasskeyService::new(
+                    "localhost",
+                    "https://localhost",
+                    "Reqstly Integration Tests",
+                )
+                .expect("passkey service should initialize"),
                 realtime_hub: realtime_hub.clone(),
                 ws_allowed_origins: vec!["*".to_string()],
             },
             "*",
         )
-        .expect("router should build");
+        .expect("router should build")
+        .layer(
+            SessionManagerLayer::new(MemoryStore::default()).with_secure(false),
+        );
 
         Self {
             app,
@@ -451,12 +461,12 @@ async fn requests_list_supports_tokenized_search_query() {
 
     let teammate_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO auth.users (id, email, raw_user_meta_data)
+        "INSERT INTO app.app_users (id, email, display_name)
          VALUES ($1, $2, $3)",
     )
     .bind(teammate_id)
     .bind("teammate@example.com")
-    .bind(json!({ "display_name": "Teammate User" }))
+    .bind("Teammate User")
     .execute(&ctx.pool)
     .await
     .expect("teammate should insert");
@@ -567,36 +577,36 @@ async fn request_assignment_and_domain_suggestions_work() {
 
     let teammate_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO auth.users (id, email, raw_user_meta_data)
+        "INSERT INTO app.app_users (id, email, display_name)
          VALUES ($1, $2, $3)",
     )
     .bind(teammate_id)
     .bind("teammate@example.com")
-    .bind(json!({ "display_name": "Teammate User" }))
+    .bind("Teammate User")
     .execute(&ctx.pool)
     .await
     .expect("teammate should insert");
 
     let collaborator_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO auth.users (id, email, raw_user_meta_data)
+        "INSERT INTO app.app_users (id, email, display_name)
          VALUES ($1, $2, $3)",
     )
     .bind(collaborator_id)
     .bind("collab@example.com")
-    .bind(json!({ "display_name": "Collab Ops" }))
+    .bind("Collab Ops")
     .execute(&ctx.pool)
     .await
     .expect("collaborator should insert");
 
     let external_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO auth.users (id, email, raw_user_meta_data)
+        "INSERT INTO app.app_users (id, email, display_name)
          VALUES ($1, $2, $3)",
     )
     .bind(external_id)
     .bind("external@other.com")
-    .bind(json!({ "display_name": "External User" }))
+    .bind("External User")
     .execute(&ctx.pool)
     .await
     .expect("external user should insert");
@@ -696,6 +706,7 @@ async fn request_assignment_and_domain_suggestions_work() {
         .to_string();
     let teammate_token =
         build_token_with_email(teammate_id, "teammate@example.com");
+    insert_ws_token_issuance(&ctx.pool, teammate_id, &teammate_token).await;
 
     let (teammate_list_status, teammate_list_payload) = send_json(
         &ctx.app,
@@ -816,30 +827,31 @@ async fn realtime_fanout_for_assign_status_and_delete_is_consistent() {
 
     let teammate_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO auth.users (id, email, raw_user_meta_data)
+        "INSERT INTO app.app_users (id, email, display_name)
          VALUES ($1, $2, $3)",
     )
     .bind(teammate_id)
     .bind("teammate@example.com")
-    .bind(json!({ "display_name": "Teammate User" }))
+    .bind("Teammate User")
     .execute(&ctx.pool)
     .await
     .expect("teammate should insert");
 
     let observer_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO auth.users (id, email, raw_user_meta_data)
+        "INSERT INTO app.app_users (id, email, display_name)
          VALUES ($1, $2, $3)",
     )
     .bind(observer_id)
     .bind("observer@example.com")
-    .bind(json!({ "display_name": "Observer User" }))
+    .bind("Observer User")
     .execute(&ctx.pool)
     .await
     .expect("observer should insert");
 
     let teammate_token =
         build_token_with_email(teammate_id, "teammate@example.com");
+    insert_ws_token_issuance(&ctx.pool, teammate_id, &teammate_token).await;
 
     let (_owner_connection_id, mut owner_rx) =
         ctx.realtime_hub.register(ctx.user_id).await;
@@ -1026,11 +1038,11 @@ fn build_token_with_email(user_id: Uuid, email: &str) -> String {
         &TestClaims {
             sub: user_id.to_string(),
             email: email.to_string(),
-            aud: "authenticated".to_string(),
-            iss: TEST_JWT_ISSUER.to_string(),
+            aud: "ws".to_string(),
+            iss: TEST_WS_TOKEN_ISSUER.to_string(),
             exp: 9_999_999_999,
         },
-        &EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
+        &EncodingKey::from_secret(TEST_WS_TOKEN_SECRET.as_bytes()),
     )
     .expect("token should encode")
 }
@@ -1126,22 +1138,19 @@ async fn drop_test_database(admin_database_url: &str, db_name: &str) {
     admin_pool.close().await;
 }
 
-async fn bootstrap_supabase_compat(pool: &PgPool) {
-    pool.execute(
-        "CREATE SCHEMA IF NOT EXISTS auth;
-         CREATE TABLE IF NOT EXISTS auth.users (
-           id UUID PRIMARY KEY,
-           email TEXT,
-           raw_user_meta_data JSONB NOT NULL DEFAULT '{}'::jsonb
-         );
-         CREATE OR REPLACE FUNCTION auth.uid()
-         RETURNS UUID
-         LANGUAGE SQL
-         STABLE
-         AS $$
-           SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
-         $$;",
+async fn insert_ws_token_issuance(pool: &PgPool, user_id: Uuid, token: &str) {
+    let token_fingerprint = Sha256::digest(token.as_bytes()).to_vec();
+    let expires_at = OffsetDateTime::now_utc() + TimeDuration::hours(1);
+
+    sqlx::query(
+        "INSERT INTO app.ws_token_issuances
+           (user_id, token_fingerprint, expires_at, metadata)
+         VALUES ($1, $2, $3, '{}'::jsonb)",
     )
+    .bind(user_id)
+    .bind(token_fingerprint)
+    .bind(expires_at)
+    .execute(pool)
     .await
-    .expect("supabase compatibility objects should be created");
+    .expect("test ws token issuance insert should succeed");
 }

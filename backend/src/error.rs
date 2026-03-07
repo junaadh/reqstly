@@ -17,6 +17,8 @@ pub struct ErrorDetail {
 pub enum AppError {
     #[error("unauthorized: {0}")]
     Unauthorized(String),
+    #[error("rate limited: {0}")]
+    RateLimited(String),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("validation failed")]
@@ -33,6 +35,7 @@ impl AppError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            Self::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Database(_) | Self::Migration(_) | Self::Internal(_) => {
@@ -44,6 +47,7 @@ impl AppError {
     fn code(&self) -> &'static str {
         match self {
             Self::Unauthorized(_) => "UNAUTHORIZED",
+            Self::RateLimited(_) => "RATE_LIMITED",
             Self::NotFound(_) => "NOT_FOUND",
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::Database(_) => "DATABASE_ERROR",
@@ -89,7 +93,19 @@ impl IntoResponse for AppError {
             _ => None,
         };
 
-        tracing::error!("request failed: {}", self);
+        match &self {
+            AppError::Unauthorized(_)
+            | AppError::RateLimited(_)
+            | AppError::NotFound(_)
+            | AppError::Validation(_) => {
+                tracing::warn!("request failed: {}", self);
+            }
+            AppError::Database(_)
+            | AppError::Migration(_)
+            | AppError::Internal(_) => {
+                tracing::error!("request failed: {}", self);
+            }
+        }
 
         (
             status,

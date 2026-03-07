@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
 
+  import { ensureCsrfToken } from '$lib/auth/csrf';
   import { Button } from '$lib/components/ui/button';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Label } from '$lib/components/ui/label';
@@ -29,6 +30,7 @@
     saving = true;
 
     try {
+      await ensureCsrfToken();
       const response = await fetch('/api/preferences', {
         method: 'PATCH',
         headers: {
