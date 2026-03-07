@@ -33,8 +33,9 @@ static METRICS: OnceLock<(PrometheusMetricLayer<'static>, MetricsRenderer)> =
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    pub jwt_secret: String,
-    pub jwt_issuer: String,
+    pub ws_token_secret: String,
+    pub ws_token_issuer: String,
+    pub passkey: auth::PasskeyService,
     pub realtime_hub: realtime::RealtimeHub,
     pub ws_allowed_origins: Vec<String>,
 }

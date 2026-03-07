@@ -17,14 +17,13 @@ fi
 
 if [[ -n "${SELECTED_ENV_FILE}" ]]; then
   set -a
+  # shellcheck disable=SC1090
   source "${SELECTED_ENV_FILE}"
   set +a
 fi
 
-SUPABASE_PUBLIC_URL_VALUE="${SUPABASE_PUBLIC_URL:-${SUPABASE_URL:-}}"
-
-if [[ -z "${APP_URL:-}" || -z "${API_URL:-}" || -z "${SUPABASE_PUBLIC_URL_VALUE}" ]]; then
-  echo "APP_URL, API_URL, and SUPABASE_PUBLIC_URL must be set"
+if [[ -z "${APP_URL:-}" || -z "${API_URL:-}" ]]; then
+  echo "APP_URL and API_URL must be set"
   exit 1
 fi
 
@@ -68,6 +67,5 @@ check_url() {
 
 check_url "${APP_URL}/health"
 check_url "${API_URL}/health"
-check_url "${SUPABASE_PUBLIC_URL_VALUE}/health"
 
 echo "Smoke checks passed"

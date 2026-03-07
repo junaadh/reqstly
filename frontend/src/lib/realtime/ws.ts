@@ -1,6 +1,5 @@
 import { get, writable } from 'svelte/store';
 
-import { readAccessTokenCookie } from '$lib/auth/session';
 import { apiBaseUrl } from '$lib/config';
 import { logDebug, logInfo, logWarn } from '$lib/debug';
 import type {
@@ -116,18 +115,6 @@ function resolveWsBaseUrl(): string {
   return apiRoot.replace(/^http/i, 'ws');
 }
 
-function resolveConnectToken(initialToken?: string): string | null {
-  const cookieToken = readAccessTokenCookie();
-  if (cookieToken) return cookieToken;
-
-  const trimmedInitial = initialToken?.trim();
-  if (trimmedInitial && trimmedInitial.length > 0) {
-    return trimmedInitial;
-  }
-
-  return null;
-}
-
 function clearReconnectTimer(): void {
   if (!reconnectTimer) return;
   clearTimeout(reconnectTimer);
@@ -192,15 +179,12 @@ function connect(initialToken?: string): void {
     return;
   }
 
-  const token = resolveConnectToken(initialToken);
-  if (!token) {
-    logInfo(SCOPE, 'Skipping realtime connection because no access token is available');
-    realtimeConnectionState.set('offline');
-    return;
-  }
-
   const wsBase = resolveWsBaseUrl();
-  const socketUrl = `${wsBase}/ws?token=${encodeURIComponent(token)}`;
+  const token = initialToken?.trim();
+  const socketUrl =
+    token && token.length > 0
+      ? `${wsBase}/ws?token=${encodeURIComponent(token)}`
+      : `${wsBase}/ws`;
 
   if (!firstConnect) {
     realtimeConnectionState.set('reconnecting');
@@ -208,7 +192,7 @@ function connect(initialToken?: string): void {
     realtimeConnectionState.set('connecting');
   }
 
-  logInfo(SCOPE, 'Connecting realtime websocket', { socketUrl: wsBase });
+  logInfo(SCOPE, 'Connecting realtime websocket', { socketUrl });
 
   socket = new WebSocket(socketUrl);
 
@@ -246,23 +230,33 @@ function connect(initialToken?: string): void {
 
     realtimeLastEventTs.set(parsed.ts);
 
-  if (parsed.type === 'sync.required') {
+    if (parsed.type === 'sync.required') {
       notifyResyncListeners('server-sync-required');
-  }
+    }
 
     logDebug(SCOPE, 'Realtime event received', {
       type: parsed.type,
       requestId: parsed.request_id ?? null
     });
 
-  notifyListeners(parsed);
-};
-
-  socket.onerror = () => {
-    logWarn(SCOPE, 'Realtime websocket transport error');
+    notifyListeners(parsed);
   };
 
-  socket.onclose = () => {
+  socket.onerror = (event) => {
+    logWarn(SCOPE, 'Realtime websocket transport error', {
+      socketUrl,
+      readyState: socket?.readyState ?? null,
+      eventType: event.type
+    });
+  };
+
+  socket.onclose = (event) => {
+    logWarn(SCOPE, 'Realtime websocket closed', {
+      socketUrl,
+      code: event.code,
+      reason: event.reason || null,
+      wasClean: event.wasClean
+    });
     socket = null;
     scheduleReconnect(initialToken);
   };

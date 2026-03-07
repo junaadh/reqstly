@@ -1,327 +1,209 @@
-# Reqstly Rewrite Plan (Big-Bang, Refined)
+# Reqstly Rewrite Plan (Re-Baselined Phase 5)
 
-## 1) Mission and Constraints
+## 1) Mission and Phase Order
 
-### Mission
-Rebuild Reqstly in strict sequence with a production-first delivery model:
-1. Backend first
-2. Backend hardening and test depth
-3. Frontend rewrite (SvelteKit)
-4. Observability stack last
+Reqstly remains a big-bang rewrite with strict phase sequencing:
+1. Backend core
+2. Backend hardening + tests
+3. Frontend rewrite
+4. Observability baseline
+5. Phase 5 auth/data-platform refactor
 
-### Non-Negotiable Constraints
-- Supabase Auth (`auth.users`) is the identity source of truth.
-- App data is in Supabase Postgres (`app.*` schema).
-- Infra remains Docker Compose + Caddy + Redis + VPS deploy via GitHub Actions.
-- No legacy compatibility layer unless explicitly requested.
-- No frontend work before backend phase gate passes.
-- No observability stack before frontend phase gate passes.
+## 2) Phase Snapshot (March 7, 2026)
 
-### Current Reality (March 7, 2026)
-- Backend reintroduced and running in dev compose.
-- Frontend reintroduced for Phase 3 in `frontend/` (SvelteKit) and integrated into dev compose.
-- Observability stack is now integrated in compose overlays (`infra/observability/` + dev/prod compose wiring).
-- Supabase is now sourced from the official full docker bundle in `infra/supabase/`.
-- Compose scripts available: `scripts/up-dev.sh`, `scripts/up-prod.sh`, `scripts/smoke-check.sh`.
-- Local bootstrap script available: `scripts/setup-dev.sh` (generates `.env.local` + local TLS certs).
+- Phase 0: complete
+- Phase 1: complete
+- Phase 2: complete
+- Phase 3: complete
+- Phase 4: complete
+- Phase 5: baseline complete (embedded auth)
 
-## 2) Phase Status Snapshot (March 7, 2026)
+## 3) Phase 5 Re-Baseline Summary
 
-- Phase 0 (Infra Foundation): **complete**
-- Phase 1 (Backend Core): **complete**
-- Phase 2 (Backend Hardening): **complete**
-- Phase 3 (Frontend Rewrite): **complete**
-- Phase 4 (Observability): **complete**
-- Phase 5 (Improvements Backlog): **next**
+Phase 5 is now an embedded-auth migration inside the existing Rust/Axum backend.
 
-### Phase 1 completion checklist
-- [x] Confirm Supabase-issued token E2E from host shell (`./scripts/token-e2e-check.py`)
-- [x] OpenAPI parity check (`./scripts/openapi-parity-check.py`)
-- [x] CI hard gates enabled (`fmt`, `clippy`, `openapi parity`, backend tests + coverage)
-- [x] Contract tests and performance sanity checks in integration suite
+- Supabase auth: out of baseline scope.
+- authentik: out of baseline scope.
+- Entra/OIDC runtime: deferred to Phase D.
+- Baseline auth methods: email/password + passkeys.
+- Canonical identity: `app.app_users` for all business FKs.
+- Session model: first-party cookie sessions via `tower-sessions` + SQLx store.
+- WebSocket auth target: cookie-first with bearer compatibility via `/api/v1/auth/ws-token`.
 
-### Phase 2 completion checklist
-- [x] Failure-path tests for auth, validation, DB constraints, and ownership
-- [x] Pagination/sorting behavior tests
-- [x] Performance sanity checks for bounds and indexes
-- [x] Backend test harness stable locally with repeatable runs (including DB bootstrap path)
-- [x] CI backend checks are defined and enforced in repository workflows; GitHub branch protection remains an external admin setting
+## 4) Locked Decisions
 
-### Phase 3 closure and carry-over checklist (March 7, 2026)
-Remaining unchecked items are now tracked as Phase 5 backlog and do not block Phase 4 completion.
-- [x] SvelteKit frontend scaffold restored and routed through Caddy (`https://localhost`)
-- [x] Core routes implemented: `/login`, `/signup`, `/`, `/requests`, `/requests/new`, `/requests/[id]`, `/profile`, `/settings`
-- [x] Frontend wired to backend `/api/v1` for dashboard + request lifecycle pages
-- [x] Supabase auth wired for email/password and Azure OAuth initiation
-- [x] Passkey enrollment integrated via Supabase MFA (`/auth/v1/factors/*`)
-- [x] Profile passkey status surfaced (count + first-added date) and add button disabled when passkey exists
-- [~] Passkey first-factor sign-in stabilization in progress (custom verify/session bridge implemented; end-to-end reliability hardening ongoing)
-- [x] Local bootstrap path documented and scripted (`scripts/setup-dev.sh`, `.env.local.example`, README/infra docs updated)
-- [x] Frontend CI gates (`bun install`, `bun run check`, `bun run build`) added to workflow
-- [ ] Remaining settings/profile persistence APIs still pending backend endpoints
+1. Auth baseline includes only email/password + passkeys.
+2. Entra/OIDC is deferred to Phase D.
+3. Session model uses `tower-sessions` with persistent SQLx-backed store in non-test environments.
+4. WebSocket auth supports both session cookie and bearer token compatibility.
+5. Hard cutover reset strategy remains in force for Phase 5.
+6. `app.app_users` is canonical identity for all business FKs.
 
-## 3) Architecture Decision
+## 5) Architecture Plan (Modular Monolith)
 
-### Decision: Backend architecture pattern
+- Keep current modular monolith and `/api/v1` API surface.
+- Add dedicated auth module:
+  - `backend/src/auth/{mod.rs,types.rs,errors.rs,repo.rs,password.rs,passkey.rs,session.rs,user_map.rs,middleware.rs,routes.rs,service.rs,rate_limit.rs}`
+- Responsibilities:
+  - `service.rs`: orchestration
+  - `repo.rs`: SQLx queries
+  - `routes.rs`: Axum handlers
+  - `middleware.rs`: current-user/session extraction
+- Business handlers consume app-level identity (`app_user_id`) only.
+- Business handlers must not access password hashes or WebAuthn internals.
 
-### Context
-- Team size: small.
-- Product scope: medium and growing (auth, ticket lifecycle, audit, future realtime, future storage).
-- Need strong testability and low coupling to framework/infrastructure details.
+## 6) Database Plan
 
-### Options Considered
-1. Layered monolith.
-2. Clean/Hexagonal modular monolith.
+### New tables
 
-### Decision
-Use a **modular monolith** with **Clean/Hexagonal boundaries**:
-- Domain: entities, rules, invariants.
-- Application: use-cases and orchestration.
-- Adapters: HTTP handlers, SQLx repositories, auth/JWT integration.
-- Framework/Infra: Axum, Postgres, Supabase Auth, Redis, Caddy.
+1. `app.app_users`
+2. `app.user_password_identities`
+3. `app.user_passkey_credentials`
+4. `app.webauthn_challenges`
+5. `app.user_oidc_identities` (schema-ready only in baseline)
+6. `app.auth_events`
+7. Session table from `tower-sessions-sqlx-store` migration
 
-### Why
-- Keeps complexity appropriate for current team size.
-- Preserves testability and swap-ability for adapters.
-- Avoids premature microservice fragmentation.
+### FK repoint targets
 
-### Consequences
-- Positive: clear dependency flow inward, easier unit/integration testing, stable API contracts.
-- Trade-off: requires discipline in module boundaries and review checklists.
+1. `app.requests.owner_user_id -> app.app_users(id)`
+2. `app.requests.assignee_user_id -> app.app_users(id)`
+3. `app.request_participants.user_id -> app.app_users(id)`
+4. `app.request_audit_logs.actor_user_id -> app.app_users(id)`
+5. `app.user_preferences.user_id -> app.app_users(id)`
 
-## 4) Target Backend Structure (Phase 1-2 target)
+### Index/constraint baseline
 
-```text
-backend/
-  src/
-    main.rs
-    config.rs
-    error.rs
-    response.rs
-    api/
-      mod.rs
-      handlers/
-      dto/
-    app/
-      use_cases/
-      services/
-    domain/
-      request/
-      audit/
-      errors/
-    infra/
-      db/
-      auth/
-      cache/
-  migrations/
-  openapi/
-```
+- Case-insensitive unique email index on `app.app_users(lower(email)) WHERE email IS NOT NULL`
+- Case-insensitive unique login email index on `app.user_password_identities(lower(email))`
+- Unique `credential_id` index for passkeys
+- Challenge lookup/expiry indexes:
+  - `(flow_type, expires_at)`
+  - `(user_id, flow_type, created_at DESC)`
 
-Rules:
-- `domain` has zero framework imports.
-- `app` depends on `domain` only.
-- `api` maps HTTP <-> app DTOs.
-- `infra` implements adapter ports.
+## 7) Public API Contracts (Phase 5 Baseline)
 
-## 5) API and Data Design Baseline
+### Auth endpoints
 
-### API contract
-- Version prefix: `/api/v1`.
-- Uniform success/error envelope across handlers.
-- Health endpoints:
-  - Infra/Caddy: `/health` on app domain.
-  - Backend API: `/api/v1/health` (and direct `api.localhost/health` route currently proxied).
+1. `POST /api/v1/auth/signup`
+2. `POST /api/v1/auth/login/password`
+3. `GET /api/v1/auth/csrf`
+4. `POST /api/v1/auth/logout`
+5. `POST /api/v1/auth/sessions/revoke`
+6. `POST /api/v1/auth/ws-token`
+7. `GET /api/v1/auth/passkeys`
+8. `POST /api/v1/auth/passkeys/register/start`
+9. `POST /api/v1/auth/passkeys/register/finish`
+10. `POST /api/v1/auth/passkeys/signup/start`
+11. `POST /api/v1/auth/passkeys/signup/finish`
+12. `POST /api/v1/auth/passkeys/login/start`
+13. `POST /api/v1/auth/passkeys/login/finish`
+14. `GET /api/v1/me`
 
-### Auth model
-- JWT issued by Supabase Auth (GoTrue).
-- `sub` maps to `auth.users.id`.
-- No app-owned users table duplication.
+### WebSocket contract
 
-### DB model (current direction)
-- `app.requests` with FK to `auth.users` (`owner_user_id`, optional `assignee_user_id`).
-- `app.request_audit_logs` with FK to `auth.users` (`actor_user_id`).
-- RLS enabled for ownership-based access.
-- Realtime publication includes request and audit tables.
+- Endpoint remains `/ws`.
+- Auth acceptance:
+  - session cookie
+  - `Authorization: Bearer <token>`
+  - `?token=<token>` for compatibility
+- Bearer tokens must be minted by `/api/v1/auth/ws-token` and match active issuance records.
+- Phase 5 frontend target is cookie-first path.
 
-## 6) Environment and Deployment Model
+## 8) Security Baseline
 
-### Environments
-- `dev`: local compose, self-signed local TLS via Caddy.
-- `staging`: VPS deploy from CI, smoke tests required.
-- `production`: promoted only after staging success.
+1. Password hashing: `password-auth::generate_hash`, verification: `password-auth::verify_password`.
+2. Generic login failure for invalid credentials.
+3. Passkey challenge TTL: 5 minutes, one-time consumption required.
+4. Session rotation on successful signup/login/passkey login.
+5. Cookie defaults: `HttpOnly`, `Secure` (non-local), `SameSite=Lax`, explicit inactivity expiry.
+6. CSRF controls for session-mutating browser endpoints (origin checks + CSRF token path).
+7. Rate-limit hook points on signup/login/passkey start+finish.
+8. Auth audit events for success/failure/logout/passkey enrollment.
+9. No plaintext password logging or storage.
+10. Preserve consistent `401/403/422/429` response-envelope behavior.
 
-### Config policy
-- Canonical env vars in `.env.example`.
-- Local overrides in `.env.local`.
-- No duplicate aliases for same meaning.
-- Keep `SMOKE_INSECURE_TLS=true` only for local self-signed cert workflows.
+## 9) Migration Outcomes
 
-### Container policy
-- Pin image versions (avoid floating `latest`).
-- Multi-stage builds where possible.
-- Health checks for critical services.
-- Keep runtime services minimal per phase scope.
-- For local full Supabase stack, require Docker VM capacity of at least 7GB RAM and 4 CPU (8GB RAM recommended).
+1. Base migrations were rewritten for hard cutover reset and no longer depend on `auth.users`, `auth.uid()`, or Supabase realtime assumptions.
+2. Supabase compatibility bootstrap was removed from integration tests.
+3. Auth tables + session store migrations are part of the main migration chain.
+4. SQLx queries previously coupled to `auth.users` now resolve identity via `app.app_users`.
+5. Business handler auth resolution uses session/current-user extraction instead of Supabase JWT assumptions.
+6. Script entrypoints remain canonical:
+   - `./scripts/up-dev.sh`
+   - `./scripts/reset-dev-db.sh`
+   - `./scripts/smoke-check.sh`
 
-## 7) CI/CD Target Workflow (Staging-first, Mandatory)
+## 10) Implementation Phases
 
-### Trigger model
-- PR to `master`: run CI checks only.
-- Push to `master`: CI + deploy pipeline.
+### Phase A: Schema + Password + Session
 
-### Required CI stages
-1. `backend-format`: `cargo fmt --check`.
-2. `backend-lint`: `cargo clippy -- -D warnings`.
-3. `backend-test-unit`: fast unit tests.
-4. `backend-test-integration`: DB-backed integration tests.
-5. `backend-contract`: OpenAPI/schema envelope assertions.
-6. `frontend-check` (Phase 3 onward): bun install/check/build.
+Status: complete.
 
-### Required CD stages
-1. Deploy staging.
-2. Run staging smoke checks.
-3. Manual approval gate.
-4. Deploy production.
-5. Run production smoke checks.
+### Phase B: Passkeys
 
-### Rollback policy
-- If staging smoke fails: stop promotion.
-- If production smoke fails: rollback to previous known good image/commit.
-- Keep rollback command documented in runbook.
+Status: complete.
 
-## 8) Phase Plan with Exit Gates
+### Phase C: Compatibility + Cleanup
 
-### Phase 0: Infra Foundation (complete)
-Scope:
-- Compose scripts and env normalization.
-- Caddy routing for app/api/supabase domains.
-- Official full Supabase stack (base compose) + Reqstly overlay services (backend/migrate/caddy/redis).
+Status: complete.
+Implemented outcomes:
+1. ws token mint endpoint + dual-mode ws auth.
+2. Supabase/authentik auth runtime removal from backend/frontend paths.
+3. CSRF/origin + rate-limit + auth-security hardening enabled.
+4. OIDC extension points kept inert and compile-ready.
 
-Exit gate:
-- `./scripts/up-dev.sh` succeeds from clean volumes.
-- `./scripts/smoke-check.sh` succeeds with local env.
-- Dev compose services healthy and deterministic restart behavior.
+### Phase D: Optional OIDC Later
 
-### Phase 1: Backend Core (Supabase-dependent, complete)
-Scope:
-- Implement request lifecycle APIs and `/api/v1/me`.
-- Enforce envelope consistency and validation rules.
-- Keep migrations deterministic from empty DB.
-- Maintain OpenAPI draft current with implementation.
+1. Add openidconnect runtime wiring and callback handlers.
+2. Activate `user_oidc_identities` linking rules.
+3. Add Entra-specific docs/tests only when feature is enabled.
 
-Exit gate:
-- Core endpoints functional against Supabase-issued token.
-- Migrations apply cleanly on fresh DB.
-- API docs and implementation match.
+## 11) Test and Acceptance Scenarios
 
-### Phase 2: Backend Hardening (complete)
-Scope:
-- Add unit + integration + contract test layers.
-- Add failure-path tests (auth, validation, DB constraints, ownership).
-- Add pagination and sorting behavior tests.
-- Add performance sanity checks (bounded queries, index usage checks where relevant).
+1. Migration-from-empty succeeds without Supabase/authentik schema dependencies.
+2. Password signup creates `app_users` + `user_password_identities` + session.
+3. Password login validates success/failure and generic errors.
+4. `/api/v1/me` resolves session user and enforces inactive-user behavior.
+5. Passkey register flow requires authenticated user and one-time challenges.
+6. Passkey login flow validates challenge/origin/rp/counter and creates session.
+7. WS auth works with session cookie and minted ws bearer token.
+8. Business endpoints enforce ownership/participant rules with `app_users.id`.
+9. Rate-limit + CSRF checks return correct envelope/status.
+10. Auth audit events are written for success/failure paths.
+11. Frontend auth works without `supabase-js` and without `/auth/v1/*`.
 
-Exit gate:
-- CI backend checks green on every PR.
-- Integration tests stable and repeatable.
-- Error schema and status codes consistent across all endpoints.
+## 12) Risks and Mitigations
 
-### Phase 3: Frontend Rewrite (SvelteKit, complete)
-Scope:
-- Recreate frontend with SvelteKit SSR.
-- Use Supabase Auth client flows.
-- Consume backend `/api/v1` exclusively.
-- Implement required routes: `/login`, `/`, `/requests`, `/requests/new`, `/requests/[id]`, `/profile`.
+1. Hidden Supabase coupling in tests/scripts.
+- Mitigation: grep checks + migration-from-empty + smoke checks.
 
-Tooling rule:
-- Use `bun`/`bunx` for install/build/check/test flows.
+2. Session rollout regressions in browser flows.
+- Mitigation: `/api/v1/me` bootstrap tests + CSRF/origin integration tests.
 
-Exit gate:
-- End-to-end request lifecycle from UI works reliably.
-- Session persistence stable across reload/navigation.
-- Frontend checks green in CI.
+3. Passkey replay/state handling bugs.
+- Mitigation: one-time challenge consumption, expiry, and state-owner checks.
 
-### Phase 4: Observability (complete)
-Scope:
-- Reintroduce Prometheus, Loki, Promtail, Grafana.
-- Dashboard minimums:
-  - API request rate, p95 latency, error rate.
-  - Auth success/failure rates.
-  - DB availability/connection saturation.
-- Actionable alert rules and runbook links.
+## 13) Completion Status
 
-Exit gate:
-- Observability stack healthy in compose and staging.
-- Alerts validated through controlled failure simulation.
+Phase 5 baseline criteria are met in-repo:
 
-### Phase 5: Improvements Backlog (next)
-Scope:
-- Resolve remaining auth/session edge cases and passkey flow hardening.
-- Complete remaining settings/profile persistence APIs.
-- Incrementally improve frontend performance and realtime resync behavior.
-- Expand operational smoke checks beyond base health probes.
+1. Checklist IDs in `docs/improvements.md` are completed for baseline scope.
+2. Supabase/authentik auth runtime dependencies are removed from active path.
+3. `app.app_users` is canonical identity and business FK target.
+4. Password + passkey flows are implemented and tested.
+5. Baseline scripts/smoke flow run without deprecated auth dependencies.
 
-Exit gate:
-- Priority Phase 5 backlog items selected and delivered with CI green.
+Phase D (OIDC/Entra runtime) remains intentionally deferred.
 
-## 9) Quality Gates and SLO-style Targets
+## 14) Context7-Validated References
 
-### Reliability targets
-- Staging smoke success rate: 100% before production promotion.
-- Production deployment requires successful post-deploy smoke.
-
-### API quality targets
-- All endpoints use uniform envelope.
-- No unbounded list endpoint.
-- Ownership access enforced at app layer and RLS layer.
-
-### Performance guardrails
-- Pagination default and max limits enforced.
-- Query patterns backed by indexes matching filters/sorts.
-
-## 10) Risk Register and Mitigations
-
-1. Supabase image/tag drift breaks startup.
-- Mitigation: pinned image tags and explicit upgrade procedure.
-
-2. DB init/migration race conditions.
-- Mitigation: dedicated `migrate` service + health-gated dependencies.
-
-3. TLS trust failures in local smoke checks.
-- Mitigation: local-only `SMOKE_INSECURE_TLS=true` support.
-
-4. Drift between OpenAPI and implementation.
-- Mitigation: contract checks in CI.
-
-5. Phase bleed (frontend/observability started early).
-- Mitigation: enforce phase gates in this plan and PR review checklist.
-
-6. Full Supabase stack instability on low-resource local Docker VM (analytics OOM kills).
-- Mitigation: enforce minimum local Docker resources (>=7GB RAM / 4 CPU, recommend 8GB RAM) in dev startup scripts and onboarding docs.
-
-## 11) Execution Checklists (from architecture + DevOps reviews)
-
-Architecture Design Progress:
-- [x] Step 1: Understand requirements and constraints
-- [x] Step 2: Assess project size and team capabilities
-- [x] Step 3: Select architecture pattern
-- [x] Step 4: Define directory structure
-- [x] Step 5: Document trade-offs and decision
-- [x] Step 6: Validate against decision framework
-
-DevOps Setup Progress:
-- [x] Step 1: Containerize application (Dockerfile)
-- [~] Step 2: Set up CI/CD pipeline (staging-first exists, hardening pending)
-- [x] Step 3: Define deployment strategy
-- [x] Step 4: Configure monitoring & alerting
-- [x] Step 5: Set up environment management
-- [x] Step 6: Document runbooks
-- [x] Step 7: Validate against anti-patterns checklist
-
-## 12) Immediate Next Actions (ordered)
-
-1. Enforce required CI checks in GitHub branch protection for PR hard-gating.
-2. Finish passkey first-factor sign-in reliability hardening and keep fallback path documented.
-3. Implement and wire any remaining profile/settings persistence APIs.
-4. Expand smoke checks to cover auth + realtime path in staging.
-5. Add explicit rollback job/procedure in deploy workflow runbook.
+- `webauthn-rs` start/finish flow and server-side state persistence requirements:
+  - https://docs.rs/webauthn-rs/latest/webauthn_rs/index.html
+  - https://docs.rs/webauthn-rs/latest/webauthn_rs/prelude/index.html
+- `tower-sessions` Axum middleware + SQLx store usage pattern:
+  - https://github.com/maxcountryman/tower-sessions/blob/main/README.md
+  - https://github.com/maxcountryman/tower-sessions/blob/main/CHANGELOG.md
+- `password-auth` hash/verify behavior:
+  - https://github.com/rustcrypto/password-hashes/blob/master/password-auth/README.md

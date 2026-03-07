@@ -1,93 +1,102 @@
 # AGENTS.md
 
-This file defines repository rules and working conventions for coding agents.
+Repository rules and working conventions for coding agents.
 
-## Project Description
-Reqstly is being rebuilt as a big-bang rewrite.
+## Project Direction
 
-Current goal:
-- Rebuild backend first (depends on Supabase DB + Supabase Auth)
-- Harden backend tests
-- Build frontend after backend is stable
-- Integrate observability stack
-- Execute Phase 5 improvements backlog after observability gate
+Reqstly is in a big-bang rewrite.
 
-Current active infrastructure:
-- Supabase full self-hosted stack from `infra/supabase/`
+Current strategic target:
+
+- Keep modular monolith architecture.
+- Keep `/api/v1` API surface.
+- Run embedded auth inside backend (Axum + Rust), not an external auth server.
+- Baseline auth methods: email/password + passkeys.
+- Keep OIDC/Entra deferred to Phase D.
+- Keep canonical identity in `app.app_users`.
+
+Phase 5 embedded-auth baseline is implemented; further work should build on this baseline rather than reintroducing provider-coupled auth paths.
+
+## Current Active Infra
+
 - Caddy (TLS/reverse proxy)
 - Redis
 - Prometheus + Loki + Promtail + Grafana
-- Docker Compose (Supabase base + Reqstly overlays)
+- Docker Compose
 - VPS deploy via GitHub Actions
 
-Source of planning truth:
+Source of truth for planning:
 - `docs/PLAN.md`
 
-## Current Repo State
-- `backend/` is reintroduced and is the active implementation focus.
-- `frontend/` is reintroduced (SvelteKit) and active.
-- `infra/supabase/` is vendored from upstream for full-stack self-hosted Supabase.
-- `infra/observability/` is reintroduced and wired through compose overlays.
-
-Do not reintroduce legacy codepaths unless explicitly requested.
-
 ## Priority Rules
-1. Follow `docs/PLAN.md` phase order strictly.
-2. Do not start frontend work before backend gates pass.
-3. Keep observability baseline healthy; avoid removing Prometheus/Loki/Grafana integration without explicit request.
-4. Keep big-bang direction; no legacy compatibility layer unless requested.
 
-## Package Manager Policy (Important)
+1. Follow `docs/PLAN.md` phase order.
+2. Keep observability baseline healthy unless explicitly directed otherwise.
+3. Do not reintroduce Supabase/authentik auth dependencies.
+4. Do not bind business logic to provider-internal identity tables.
+
+## Package Manager Policy
+
 Use `bun` and `bunx` by default.
 
-Required conventions:
-- Use `bun install` instead of `npm install`.
-- Use `bun add` instead of `npm install <pkg>`.
-- Use `bun run <script>` instead of `npm run <script>`.
-- Use `bunx <tool>` instead of `npx <tool>`.
+- `bun install` instead of `npm install`
+- `bun add` instead of `npm install <pkg>`
+- `bun run <script>` instead of `npm run <script>`
+- `bunx <tool>` instead of `npx <tool>`
 
-Do not use `npm` or `npx` unless the user explicitly asks for it or there is a proven blocker with `bun`/`bunx`.
+Use `npm`/`npx` only if explicitly requested or blocked.
 
 ## Runtime and Infra Commands
-Preferred stack commands:
+
+Preferred commands:
+
 - Dev up: `./scripts/up-dev.sh`
 - Prod up: `./scripts/up-prod.sh`
+- Dev DB reset: `./scripts/reset-dev-db.sh`
 - Smoke checks: `./scripts/smoke-check.sh`
 
-If calling Docker Compose directly, use:
-- Dev: `infra/supabase/docker-compose.yml` + `infra/docker-compose.dev.yml` with `.env.local`
-- Prod: `infra/supabase/docker-compose.yml` + `infra/docker-compose.yml` with `.env` (or `.env.example` fallback)
+## Backend Standards
 
-## Backend Standards (when backend is reintroduced)
 - Framework: Rust + Axum
-- DB access: sqlx
+- DB access: SQLx
 - API prefix: `/api/v1`
-- Auth: Supabase JWT validation
+- Auth baseline:
+  - `password-auth` for passwords
+  - `webauthn-rs` for passkeys
+  - `tower-sessions` for first-party cookie sessions
+- Identity mapping: business FKs and ownership resolve through `app.app_users`
 - Response shape: consistent envelope for success and errors
-- Migrations: required for schema changes
+- Migrations required for schema changes
 
-Minimum backend quality gate before frontend:
-- Backend compiles and runs in compose
-- Migrations apply cleanly from empty DB
+Minimum backend gate:
+
+- Backend compiles
+- Migrations apply from empty DB
 - Core endpoints implemented and tested
 - CI backend checks green
 
 ## CI/CD Rules
-Deployment flow must stay:
+
+Deployment flow must remain:
+
 1. Build/test
 2. Deploy staging
 3. Run staging smoke checks
 4. Deploy production
 
-Never bypass staging validation for production deployment.
+Never bypass staging validation.
 
 ## Documentation Rules
-When making significant architecture or phase-order changes:
+
+When architecture or phase-order changes:
+
 - Update `docs/PLAN.md`
-- Update this `AGENTS.md` if repo rules changed
+- Update this `AGENTS.md`
+- Update phase checklist docs if scope/acceptance changed
 
 ## Safety and Scope
-- Prefer minimal, reversible changes per step.
-- Keep env vars canonical and avoid duplicated aliases.
-- Do not add services not in current phase scope.
-- If uncertain about phase ordering, defer to `docs/PLAN.md`.
+
+- Prefer minimal, reversible changes.
+- Keep env vars canonical; avoid duplicated aliases.
+- Do not add out-of-scope services without explicit request.
+- If uncertain on phase sequencing, defer to `docs/PLAN.md`.

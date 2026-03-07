@@ -5,9 +5,9 @@
   import type { Snippet } from 'svelte';
 
   import { clearClientAuthState } from '$lib/auth/session';
+  import { ensureCsrfToken } from '$lib/auth/csrf';
   import { Button } from '$lib/components/ui/button';
   import { realtimeConnectionState, stopRealtime } from '$lib/realtime/ws';
-  import { getSupabaseClient } from '$lib/supabase/client';
   import type { MeProfile } from '$lib/types';
   import { cn } from '$lib/utils';
 
@@ -49,8 +49,14 @@
     if (signingOut) return;
     signingOut = true;
     try {
-      const client = getSupabaseClient();
-      await client?.auth.signOut();
+      const csrfToken = await ensureCsrfToken();
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'X-CSRF-Token': csrfToken
+        }
+      });
     } catch (error) {
       console.error('Sign out failed', error);
     } finally {

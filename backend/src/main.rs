@@ -1,6 +1,6 @@
 use dotenvy::dotenv;
 use reqstly_backend::{
-    AppState, build_app, config::Settings, db, error, realtime, telemetry,
+    AppState, auth, build_app, config::Settings, db, error, realtime, telemetry,
 };
 use std::net::SocketAddr;
 use tracing::Instrument;
@@ -33,21 +33,32 @@ async fn run() -> Result<(), error::AppError> {
 
         let db = db::create_pool(&settings.database.url).await?;
         db::run_migrations(&db).await?;
-
-        let issuer =
-            format!("{}/auth/v1", settings.supabase.url.trim_end_matches('/'));
+        let passkey = auth::PasskeyService::new(
+            &settings.auth.webauthn_rp_id,
+            &settings.auth.webauthn_rp_origin,
+            &settings.auth.webauthn_rp_name,
+        )?;
+        let session_runtime = auth::session::init_session_runtime(
+            db.clone(),
+            settings.auth.session_secure,
+            &settings.auth.session_cookie_name,
+            settings.auth.session_idle_minutes,
+        )
+        .await?;
 
         let state = AppState {
-            db,
-            jwt_secret: settings.jwt.secret,
-            jwt_issuer: issuer,
+            db: db.clone(),
+            ws_token_secret: settings.auth.ws_token_secret,
+            ws_token_issuer: settings.auth.ws_token_issuer,
+            passkey,
             realtime_hub: realtime::RealtimeHub::new(),
             ws_allowed_origins: realtime::parse_allowed_origins(
                 &settings.cors.allowed_origin,
             ),
         };
 
-        let app = build_app(state, &settings.cors.allowed_origin)?;
+        let app = build_app(state, &settings.cors.allowed_origin)?
+            .layer(session_runtime.layer);
 
         let addr = SocketAddr::from(([0, 0, 0, 0], settings.server.port));
         tracing::info!(%addr, "backend listening");

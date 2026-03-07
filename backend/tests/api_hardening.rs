@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use support::{
     TestClaims, TestContext, build_token, build_token_with_claims,
-    create_request, insert_auth_user, send_json,
+    create_request, insert_auth_user, insert_ws_token_issuance, send_json,
 };
 
 async fn assert_me_unauthorized_for_token(
@@ -36,11 +36,11 @@ async fn auth_rejects_expired_token() {
         TestClaims {
             sub: ctx.user_id.to_string(),
             email: "qa@example.com".to_string(),
-            aud: "authenticated".to_string(),
-            iss: support::TEST_JWT_ISSUER.to_string(),
+            aud: "ws".to_string(),
+            iss: support::TEST_WS_TOKEN_ISSUER.to_string(),
             exp: 1,
         },
-        support::TEST_JWT_SECRET,
+        support::TEST_WS_TOKEN_SECRET,
     );
 
     let _ = assert_me_unauthorized_for_token(&ctx, token).await;
@@ -55,11 +55,11 @@ async fn auth_rejects_wrong_issuer_and_audience() {
         TestClaims {
             sub: ctx.user_id.to_string(),
             email: "qa@example.com".to_string(),
-            aud: "authenticated".to_string(),
+            aud: "ws".to_string(),
             iss: "https://issuer.invalid/auth/v1".to_string(),
             exp: 9_999_999_999,
         },
-        support::TEST_JWT_SECRET,
+        support::TEST_WS_TOKEN_SECRET,
     );
     let _ = assert_me_unauthorized_for_token(&ctx, wrong_issuer_token).await;
 
@@ -68,10 +68,10 @@ async fn auth_rejects_wrong_issuer_and_audience() {
             sub: ctx.user_id.to_string(),
             email: "qa@example.com".to_string(),
             aud: "anon".to_string(),
-            iss: support::TEST_JWT_ISSUER.to_string(),
+            iss: support::TEST_WS_TOKEN_ISSUER.to_string(),
             exp: 9_999_999_999,
         },
-        support::TEST_JWT_SECRET,
+        support::TEST_WS_TOKEN_SECRET,
     );
     let _ = assert_me_unauthorized_for_token(&ctx, wrong_audience_token).await;
 
@@ -116,6 +116,48 @@ async fn auth_rejects_malformed_bearer_header() {
 }
 
 #[tokio::test]
+async fn auth_rejects_unissued_bearer_token() {
+    let ctx = TestContext::new().await;
+    let unissued_user_id = Uuid::new_v4();
+    insert_auth_user(
+        &ctx.pool,
+        unissued_user_id,
+        "unissued@example.com",
+        "unissued-user",
+    )
+    .await;
+
+    let token = build_token(unissued_user_id);
+    let _ = assert_me_unauthorized_for_token(&ctx, token).await;
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn auth_revoke_all_sessions_revokes_active_ws_tokens() {
+    let ctx = TestContext::new().await;
+
+    let (revoke_status, revoke_payload) = send_json(
+        &ctx.app,
+        Method::POST,
+        "/api/v1/auth/sessions/revoke",
+        Some(&ctx.token),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(revoke_status, StatusCode::OK);
+    assert_eq!(revoke_payload["data"]["ok"], true);
+
+    let (me_status, me_payload) =
+        send_json(&ctx.app, Method::GET, "/api/v1/me", Some(&ctx.token), None)
+            .await;
+    assert_eq!(me_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(me_payload["error"]["code"], "UNAUTHORIZED");
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
 async fn ownership_isolation_blocks_cross_user_access() {
     let ctx = TestContext::new().await;
 
@@ -136,6 +178,7 @@ async fn ownership_isolation_blocks_cross_user_access() {
     )
     .await;
     let other_token = build_token(other_user_id);
+    insert_ws_token_issuance(&ctx.pool, other_user_id, &other_token).await;
 
     let path = format!("/api/v1/requests/{request_id}");
     for (method, body) in [

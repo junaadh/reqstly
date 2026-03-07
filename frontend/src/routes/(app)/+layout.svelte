@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte';
 
   import { startRealtime, stopRealtime, subscribeRealtimeEvents } from '$lib/realtime/ws';
+  import { ensureCsrfToken } from '$lib/auth/csrf';
   import type { RealtimeServerEvent } from '$lib/realtime/types';
   import { logInfo } from '$lib/debug';
   import AppShell from '$lib/ui/AppShell.svelte';
@@ -34,9 +35,16 @@
 
   onMount(() => {
     const unsubscribeEvents = subscribeRealtimeEvents(handleRealtimeEvent);
-    startRealtime(data.token);
+    const handlePageHide = () => {
+      stopRealtime();
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    void ensureCsrfToken().catch(() => {});
+    startRealtime();
 
     return () => {
+      window.removeEventListener('pagehide', handlePageHide);
       unsubscribeEvents();
       stopRealtime();
     };

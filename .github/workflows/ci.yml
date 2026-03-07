@@ -106,7 +106,7 @@ jobs:
         run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" FORCE=1 ROTATE_KEYS=1 ./scripts/setup-dev.sh
 
       - name: Auth CORS regression check
-        run: AUTH_CORS_BASE_URL=http://127.0.0.1:8000 ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" AUTH_CORS_CLEANUP=true ./scripts/test-auth-cors.sh
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" AUTH_CORS_CLEANUP=true ./scripts/test-auth-cors.sh
 
   frontend-check:
     runs-on: ubuntu-latest

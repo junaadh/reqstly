@@ -1,4 +1,21 @@
 services:
+  db:
+    container_name: db
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   redis:
     container_name: redis
     image: redis:7-alpine
@@ -18,25 +35,23 @@ services:
     platform: linux/amd64
     command: >
       sh -c "
-        sqlx database create || true &&
-        sqlx migrate run
+        sqlx database create --database-url \"$$DATABASE_URL\" || true &&
+        sqlx migrate run --database-url \"$$DATABASE_URL\" --source /migrations
       "
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
     depends_on:
       db:
         condition: service_healthy
-      auth:
-        condition: service_healthy
     restart: "no"
     volumes:
-      - ../../backend/migrations:/migrations
+      - ../backend/migrations:/migrations:ro
 
   backend:
     container_name: backend
     image: ${BACKEND_IMAGE:-reqstly-backend}:${BACKEND_IMAGE_TAG:-local}
     build:
-      context: ../../backend
+      context: ../backend
       target: runtime
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
@@ -45,17 +60,25 @@ services:
       retries: 10
       start_period: 10s
     environment:
-      DATABASE__URL: postgres://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}
+      DATABASE__URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
       SERVER__PORT: 3000
       SERVER__BASE_URL: ${API_URL}
-      JWT__SECRET: ${JWT_SECRET}
-      SUPABASE__URL: ${SUPABASE_PUBLIC_URL}
       CORS__ALLOWED_ORIGIN: ${APP_URL}
+      AUTH__WS_TOKEN_SECRET: ${AUTH__WS_TOKEN_SECRET}
+      AUTH__WS_TOKEN_ISSUER: ${AUTH__WS_TOKEN_ISSUER:-reqstly.com/ws}
+      AUTH__SESSION_COOKIE_NAME: ${AUTH__SESSION_COOKIE_NAME:-reqstly_session}
+      AUTH__SESSION_IDLE_MINUTES: ${AUTH__SESSION_IDLE_MINUTES:-480}
+      AUTH__SESSION_SECURE: ${AUTH__SESSION_SECURE:-true}
+      AUTH__WEBAUTHN_RP_ID: ${AUTH__WEBAUTHN_RP_ID}
+      AUTH__WEBAUTHN_RP_ORIGIN: ${AUTH__WEBAUTHN_RP_ORIGIN}
+      AUTH__WEBAUTHN_RP_NAME: ${AUTH__WEBAUTHN_RP_NAME:-Reqstly}
+      LOGGING__LEVEL: ${LOGGING__LEVEL:-reqstly_backend=info,tower_http=info,axum=info}
+      LOGGING__FORMAT: ${LOGGING__FORMAT:-json}
+      LOGGING__SERVICE_NAME: ${LOGGING__SERVICE_NAME:-reqstly-backend}
+      LOGGING__ENVIRONMENT: ${LOGGING__ENVIRONMENT:-production}
       RUST_LOG: ${RUST_LOG:-info}
     depends_on:
       db:
-        condition: service_healthy
-      auth:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -67,10 +90,16 @@ services:
     container_name: frontend
     image: ${FRONTEND_IMAGE:-reqstly-frontend}:${FRONTEND_IMAGE_TAG:-local}
     build:
-      context: ../../frontend
+      context: ../frontend
       target: runtime
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then((r)=>process.exit((r.status>=200&&r.status<400)?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -85,16 +114,8 @@ services:
       PORT_HEADER: x-forwarded-port
       PUBLIC_API_BASE_URL: ${API_URL}
       PRIVATE_API_BASE_URL: ${PRIVATE_API_BASE_URL:-http://backend:3000}
-      PRIVATE_SUPABASE_URL: ${PRIVATE_SUPABASE_URL:-http://kong:8000}
-      PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
-      PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
-      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      JWT_SECRET: ${JWT_SECRET}
-      SUPABASE_AUTH_JWT_ISSUER: ${SUPABASE_PUBLIC_URL}/auth/v1
     depends_on:
       backend:
-        condition: service_healthy
-      kong:
         condition: service_healthy
     expose:
       - 3000
@@ -108,15 +129,13 @@ services:
       - "443:443"
       - "2019:2019"
     depends_on:
-      kong:
-        condition: service_healthy
       backend:
         condition: service_healthy
       frontend:
         condition: service_healthy
     restart: unless-stopped
     volumes:
-      - ../proxy/caddy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - ./proxy/caddy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
 
@@ -124,7 +143,7 @@ services:
     container_name: postgres-exporter
     image: prometheuscommunity/postgres-exporter:v0.16.0
     environment:
-      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
     depends_on:
       db:
         condition: service_healthy
@@ -151,7 +170,7 @@ services:
     ports:
       - "127.0.0.1:${LOKI_PORT:-3100}:3100"
     volumes:
-      - ../observability/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - ./observability/loki/loki-config.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
     restart: unless-stopped
 
@@ -164,7 +183,7 @@ services:
         condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
     restart: unless-stopped
 
   prometheus:
@@ -184,8 +203,8 @@ services:
       redis-exporter:
         condition: service_started
     volumes:
-      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     restart: unless-stopped
 
@@ -204,12 +223,13 @@ services:
       loki:
         condition: service_started
     volumes:
-      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     restart: unless-stopped
 
 volumes:
+  db-data:
   redis-data:
   caddy-data:
   caddy-config:

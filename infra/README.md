@@ -1,34 +1,38 @@
-# Reqstly Infrastructure
+# Reqstly Infrastructure (Phase 5 Baseline)
 
-Infrastructure is split into:
-- `infra/supabase/` (official Supabase self-host Docker bundle, vendored)
-- Reqstly overlays:
-  - `infra/docker-compose.dev.yml`
-  - `infra/docker-compose.yml`
-- Observability configs and Grafana provisioning:
-  - `infra/observability/`
-- Caddy reverse proxy configs in `infra/proxy/caddy/`
+## Target Direction
+
+Infrastructure baseline is:
+
+- Reqstly backend + frontend
+- PostgreSQL for app data and session store
+- Embedded backend auth (no authentik in baseline runtime)
+- Caddy reverse proxy
+- Redis
+- Observability stack (`infra/observability/`)
+
+Supabase infrastructure artifacts are no longer part of active runtime.
+
+Entra/OIDC runtime is deferred to Phase D.
 
 ## Compose Model
 
-Run with two compose files:
-- Base: `infra/supabase/docker-compose.yml`
-- Overlay: `infra/docker-compose.dev.yml` (dev) or `infra/docker-compose.yml` (prod)
+Use existing script entrypoints for orchestration:
 
-Helper scripts:
-- Dev up: `./scripts/up-dev.sh`
-- Prod up: `./scripts/up-prod.sh`
-- Smoke checks: `./scripts/smoke-check.sh`
+- `./scripts/setup-dev.sh`
+- `./scripts/up-dev.sh`
+- `./scripts/reset-dev-db.sh`
+- `./scripts/smoke-check.sh`
+- `./scripts/up-prod.sh`
 
-## Services
+Direct `docker compose` is for debugging/teardown only.
 
-Supabase base services include:
-- `kong`, `auth`, `rest`, `realtime`, `storage`, `imgproxy`, `meta`
-- `db`, `supavisor`, `studio`, `functions`, `analytics`, `vector`
+## Services (Baseline)
 
-Reqstly overlay services include:
 - `backend`
-- `migrate`
+- `frontend`
+- `db` (Postgres)
+- `migrate` (one-shot SQLx migrations container)
 - `caddy`
 - `redis`
 - `prometheus`
@@ -38,22 +42,37 @@ Reqstly overlay services include:
 - `postgres-exporter`
 - `redis-exporter`
 
-## Environment
+## Environment Variables
 
-Canonical env vars are in:
-- `.env.example` (template)
-- `.env.local` (local dev)
+Canonical env definitions live in:
 
-Key canonical Supabase vars:
-- `POSTGRES_PASSWORD`
-- `JWT_SECRET`
-- `ANON_KEY`
-- `SERVICE_ROLE_KEY`
-- `SUPABASE_PUBLIC_URL`
-- `API_EXTERNAL_URL`
-- `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_PORT`
+- `.env.example`
+- `.env.local.example`
 
-Key observability vars:
+### Backend/auth runtime
+
+- `DATABASE__URL`
+- `SERVER__PORT`
+- `SERVER__BASE_URL`
+- `CORS__ALLOWED_ORIGIN`
+- `AUTH__WS_TOKEN_SECRET`
+- `AUTH__WS_TOKEN_ISSUER`
+- `AUTH__SESSION_COOKIE_NAME`
+- `AUTH__SESSION_IDLE_MINUTES`
+- `AUTH__SESSION_SECURE`
+- `AUTH__WEBAUTHN_RP_ID`
+- `AUTH__WEBAUTHN_RP_ORIGIN`
+- `AUTH__WEBAUTHN_RP_NAME`
+
+### Logging/telemetry
+
+- `LOGGING__LEVEL`
+- `LOGGING__FORMAT`
+- `LOGGING__SERVICE_NAME`
+- `LOGGING__ENVIRONMENT`
+
+### Observability
+
 - `PROMETHEUS_PORT`
 - `LOKI_PORT`
 - `GRAFANA_PORT`
@@ -62,39 +81,35 @@ Key observability vars:
 
 ## Local Flow
 
-1. Bootstrap local env + certs:
+1. Bootstrap local env and certs:
+
 ```bash
 ./scripts/setup-dev.sh
 ```
 
 2. Start stack:
+
 ```bash
 ./scripts/up-dev.sh
 ```
 
-3. Run smoke checks:
+`migrate` is expected to exit `0` after applying migrations.
+
+3. Reset DB when needed:
+
 ```bash
-set -a; source .env.local; set +a
+./scripts/reset-dev-db.sh
+```
+
+4. Run smoke checks:
+
+```bash
 ./scripts/smoke-check.sh
 ```
 
-4. Open observability UIs:
-- Grafana: `http://127.0.0.1:${GRAFANA_PORT:-3001}`
-- Prometheus: `http://127.0.0.1:${PROMETHEUS_PORT:-9090}`
+## Operational Rules
 
-5. Stop stack:
-```bash
-docker compose --env-file .env.local \
-  -f infra/supabase/docker-compose.yml \
-  -f infra/docker-compose.dev.yml \
-  down
-```
-
-## Notes
-
-- `api.localhost` routes to Reqstly backend through Caddy.
-- `supabase.localhost` routes to Supabase `kong` through Caddy.
-- Backend uses `DATABASE_URL` semantics for `sqlx` migration and runtime DB access.
-- `scripts/setup-dev.sh` is the default local bootstrap entrypoint. It creates `.env.local` and local TLS certs.
-- Grafana dashboard provisioning lives under `infra/observability/grafana/`.
-- Prometheus alert rules reference [docs/OBSERVABILITY_RUNBOOK.md](../docs/OBSERVABILITY_RUNBOOK.md).
+- App business logic must only use `app.app_users` as identity root.
+- Do not bind business logic to provider-internal identity tables.
+- Keep same-site browser session path as default auth path.
+- Keep staging smoke checks mandatory before production promotion.

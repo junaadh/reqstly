@@ -34,12 +34,11 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = localhost
 DNS.2 = api.localhost
-DNS.3 = supabase.localhost
-DNS.4 = *.localhost
+DNS.3 = *.localhost
 IP.1 = 127.0.0.1
 EOF
 
-echo "Generating server certificate for localhost, api.localhost, supabase.localhost..."
+echo "Generating server certificate for localhost and api.localhost..."
 openssl genrsa -out "${SERVER_KEY}" 2048
 openssl req -new -key "${SERVER_KEY}" -out "${SERVER_CSR}" -subj "/CN=localhost"
 openssl x509 -req -in "${SERVER_CSR}" -CA "${CA_CERT}" -CAkey "${CA_KEY}" \

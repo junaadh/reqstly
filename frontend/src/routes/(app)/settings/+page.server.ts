@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 
-import { callBackend } from '$lib/server/backend';
+import { callBackend, withSessionCookie } from '$lib/server/backend';
 import type { ApiEnvelope, UserPreferences } from '$lib/types';
 
 const fallbackPreferences: UserPreferences = {
@@ -9,9 +9,13 @@ const fallbackPreferences: UserPreferences = {
   default_page_size: 20
 };
 
-export const load: PageServerLoad = async ({ fetch, parent }) => {
-  const { token } = await parent();
-  const response = await callBackend(fetch, token, '/preferences');
+export const load: PageServerLoad = async ({ fetch, parent, request }) => {
+  await parent();
+  const response = await callBackend(
+    fetch,
+    '/preferences',
+    withSessionCookie(request.headers.get('cookie'))
+  );
 
   if (!response.ok || !response.json || typeof response.json !== 'object') {
     return {

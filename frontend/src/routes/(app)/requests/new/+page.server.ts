@@ -1,15 +1,19 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { asApiError, callBackend } from '$lib/server/backend';
-import { getAccessTokenFromCookies } from '$lib/server/auth-cookie';
+import { asApiError, callBackend, withSessionCookie } from '$lib/server/backend';
 import type { ApiEnvelope, AssigneeSuggestion, RequestEnums, SupportRequest } from '$lib/types';
 
-export const load: PageServerLoad = async ({ fetch, parent }) => {
-  const { token } = await parent();
+export const load: PageServerLoad = async ({ fetch, parent, request }) => {
+  await parent();
+  const cookieHeader = request.headers.get('cookie');
   const [enumResponse, assigneeResponse] = await Promise.all([
-    callBackend(fetch, token, '/meta/enums'),
-    callBackend(fetch, token, '/assignees/suggestions?limit=100')
+    callBackend(fetch, '/meta/enums', withSessionCookie(cookieHeader)),
+    callBackend(
+      fetch,
+      '/assignees/suggestions?limit=100',
+      withSessionCookie(cookieHeader)
+    )
   ]);
 
   const payload =
@@ -33,11 +37,8 @@ export const load: PageServerLoad = async ({ fetch, parent }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ cookies, fetch, request }) => {
-    const token = getAccessTokenFromCookies(cookies);
-    if (!token) {
-      throw redirect(303, '/login?reason=session-expired');
-    }
+  default: async ({ fetch, request }) => {
+    const cookieHeader = request.headers.get('cookie');
     const form = await request.formData();
 
     const payload = {
@@ -48,10 +49,14 @@ export const actions: Actions = {
       assignee_email: String(form.get('assignee_email') ?? '').trim() || null
     };
 
-    const createResponse = await callBackend(fetch, token, '/requests', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
+    const createResponse = await callBackend(
+      fetch,
+      '/requests',
+      withSessionCookie(cookieHeader, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      })
+    );
 
     if (createResponse.ok && createResponse.json && typeof createResponse.json === 'object') {
       const created = (createResponse.json as ApiEnvelope<SupportRequest>).data;

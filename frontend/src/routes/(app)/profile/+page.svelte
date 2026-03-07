@@ -9,11 +9,16 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { clearClientAuthState } from '$lib/auth/session';
-  import { enrollPasskeyFactor, listPasskeyFactors, type PasskeyFactor } from '$lib/auth/passkeys';
-  import { logInfo, logWarn } from '$lib/debug';
+  import { ensureCsrfToken } from '$lib/auth/csrf';
+  import {
+    enrollPasskey,
+    listAccountPasskeys,
+    type PasskeyCredentialSummary,
+    type PasskeyStatsSummary
+  } from '$lib/auth/passkeys';
+  import { logInfo } from '$lib/debug';
   import { subscribeRealtimeEvents } from '$lib/realtime/ws';
   import type { RealtimeServerEvent } from '$lib/realtime/types';
-  import { getSupabaseClient } from '$lib/supabase/client';
   import type { ApiEnvelope, ApiErrorEnvelope, MeProfile } from '$lib/types';
 
   import type { PageData } from './$types';
@@ -30,38 +35,43 @@
   let signingOut = $state(false);
   let savingProfile = $state(false);
   let passkeyLoading = $state(false);
-  let passkeyStatusLoading = $state(true);
+  let passkeyListLoading = $state(false);
+  let passkeys = $state<PasskeyCredentialSummary[]>([]);
+  let passkeyStats = $state<PasskeyStatsSummary>({
+    passkey_count: 0,
+    first_registered_at: null,
+    first_used_at: null,
+    last_used_at: null
+  });
   let passkeyError = $state('');
   let passkeyMessage = $state('');
-  let passkeyStatusError = $state('');
-  let passkeyFactors = $state<PasskeyFactor[]>([]);
   let profileError = $state('');
   let profileMessage = $state('');
+  const passkeyCount = $derived(passkeyStats.passkey_count || passkeys.length);
+  const firstUsedDate = $derived.by(() => {
+    const fromStats = parseTimestamp(passkeyStats.first_used_at);
+    if (fromStats) {
+      return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit'
+      }).format(fromStats);
+    }
 
-  const verifiedPasskeys = $derived.by(() =>
-    passkeyFactors.filter((factor) => factor.status === 'verified')
-  );
-  const passkeyCount = $derived(verifiedPasskeys.length);
-  const hasPasskey = $derived(passkeyCount > 0);
-  const addedDate = $derived.by(() => {
-    const sorted = [...verifiedPasskeys]
-      .filter((factor) => Boolean(factor.created_at))
-      .sort((left, right) => {
-        const leftTime = new Date(left.created_at ?? '').getTime();
-        const rightTime = new Date(right.created_at ?? '').getTime();
-        return Number.isFinite(leftTime) && Number.isFinite(rightTime) ? leftTime - rightTime : 0;
-      });
+    const earliest = passkeys
+      .map((passkey) => parseTimestamp(passkey.first_used_at ?? passkey.last_used_at))
+      .filter((value): value is Date => value !== null)
+      .sort((left, right) => left.getTime() - right.getTime())[0];
 
-    const first = sorted[0];
-    if (!first?.created_at) return null;
-    const parsed = new Date(first.created_at);
-    if (Number.isNaN(parsed.getTime())) return null;
+    if (!earliest) {
+      return null;
+    }
 
     return new Intl.DateTimeFormat(undefined, {
       year: 'numeric',
       month: 'short',
       day: '2-digit'
-    }).format(parsed);
+    }).format(earliest);
   });
 
   $effect(() => {
@@ -83,33 +93,18 @@
     liveDisplayName = nextUser.display_name;
   }
 
-  async function refreshPasskeyStatus(): Promise<void> {
-    passkeyStatusLoading = true;
-    passkeyStatusError = '';
-
-    try {
-      const client = getSupabaseClient();
-      const factors = await listPasskeyFactors(client ?? undefined);
-      passkeyFactors = factors;
-      logInfo('profile.passkeys', 'Loaded passkey factors', {
-        count: factors.length
-      });
-    } catch (error) {
-      passkeyStatusError = error instanceof Error ? error.message : 'Failed to load passkey status.';
-      logWarn('profile.passkeys', 'Failed to load passkey factors', {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    } finally {
-      passkeyStatusLoading = false;
-    }
-  }
-
   async function signOut(): Promise<void> {
     if (signingOut) return;
     signingOut = true;
     try {
-      const client = getSupabaseClient();
-      await client?.auth.signOut();
+      const csrfToken = await ensureCsrfToken();
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'X-CSRF-Token': csrfToken
+        }
+      });
     } catch (error) {
       console.error('Sign out failed', error);
     } finally {
@@ -121,28 +116,58 @@
   }
 
   async function addPasskey(): Promise<void> {
-    if (hasPasskey) return;
     passkeyError = '';
     passkeyMessage = '';
-
-    const client = getSupabaseClient();
-    if (!client) {
-      passkeyError =
-        'Supabase public config is missing. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY.';
-      return;
-    }
 
     passkeyLoading = true;
 
     try {
-      await enrollPasskeyFactor(client, 'Reqstly Profile Passkey');
+      await enrollPasskey('Reqstly Profile Passkey');
       passkeyMessage = 'Passkey added successfully.';
-      await refreshPasskeyStatus();
+      await loadPasskeys();
     } catch (error) {
       passkeyError = error instanceof Error ? error.message : 'Failed to add passkey.';
     } finally {
       passkeyLoading = false;
     }
+  }
+
+  async function loadPasskeys(): Promise<void> {
+    passkeyListLoading = true;
+    passkeyError = '';
+
+    try {
+      const payload = await listAccountPasskeys();
+      passkeys = payload.credentials;
+      passkeyStats = payload.stats;
+    } catch (error) {
+      passkeyError = error instanceof Error ? error.message : 'Failed to load passkeys.';
+    } finally {
+      passkeyListLoading = false;
+    }
+  }
+
+  function parseTimestamp(raw: string | null): Date | null {
+    if (!raw) {
+      return null;
+    }
+
+    const candidates = [raw];
+    if (!raw.includes('T') && raw.includes(' ')) {
+      candidates.push(raw.replace(' ', 'T'));
+    }
+    if (/([+-]\d{2})$/.test(raw)) {
+      candidates.push(raw.replace(/([+-]\d{2})$/, '$1:00'));
+    }
+
+    for (const candidate of candidates) {
+      const parsed = new Date(candidate);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return null;
   }
 
   async function saveProfile(): Promise<void> {
@@ -162,6 +187,7 @@
 
     savingProfile = true;
     try {
+      await ensureCsrfToken();
       const response = await fetch('/api/me', {
         method: 'PATCH',
         headers: {
@@ -210,7 +236,7 @@
 
   onMount(() => {
     const unsubscribeEvents = subscribeRealtimeEvents(handleRealtimeEvent);
-    void refreshPasskeyStatus();
+    void loadPasskeys();
 
     return () => {
       unsubscribeEvents();
@@ -249,7 +275,7 @@
         </div>
       </div>
 
-      <div class="rounded-xl border border-border bg-muted/20 p-4" aria-busy={passkeyStatusLoading}>
+      <div class="rounded-xl border border-border bg-muted/20 p-4" aria-busy={passkeyLoading}>
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="space-y-1">
             <p class="flex items-center gap-2 font-semibold text-foreground">
@@ -257,47 +283,13 @@
               Passkeys
             </p>
             <p class="text-xs text-muted-foreground">
-              Manage your device passkeys for secure sign-in with Supabase WebAuthn MFA.
+              Register a passkey on this account for passwordless sign-in.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onclick={addPasskey}
-            disabled={passkeyLoading || passkeyStatusLoading || hasPasskey}
-            aria-disabled={passkeyLoading || passkeyStatusLoading || hasPasskey}
-          >
-            {#if passkeyStatusLoading}
-              Loading…
-            {:else if passkeyLoading}
-              Adding passkey…
-            {:else if hasPasskey}
-              Passkey already added
-            {:else}
-              Add passkey
-            {/if}
+          <Button type="button" variant="outline" onclick={addPasskey} disabled={passkeyLoading} aria-disabled={passkeyLoading}>
+            {passkeyLoading ? 'Adding passkey…' : 'Add passkey'}
           </Button>
         </div>
-
-        {#if passkeyStatusError}
-          <p class="mt-3 rounded-md border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive" role="alert">
-            {passkeyStatusError}
-          </p>
-        {:else}
-          <dl class="mt-3 grid gap-2 rounded-lg border border-border/80 bg-background/70 p-3 md:grid-cols-2">
-            <div>
-              <dt class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Verified passkeys</dt>
-              <dd class="mt-1 text-sm font-semibold text-foreground">{passkeyCount}</dd>
-            </div>
-            <div>
-              <dt class="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <CalendarDays class="size-3.5" />
-                First added
-              </dt>
-              <dd class="mt-1 text-sm font-semibold text-foreground">{addedDate ?? 'Not added yet'}</dd>
-            </div>
-          </dl>
-        {/if}
 
         {#if passkeyError}
           <p class="mt-3 rounded-md border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive" role="alert">
@@ -309,6 +301,26 @@
           <p class="mt-3 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-medium text-primary" role="status">
             {passkeyMessage}
           </p>
+        {/if}
+
+        {#if passkeyListLoading}
+          <p class="mt-3 text-xs text-muted-foreground">Loading passkeys...</p>
+        {:else}
+          <dl class="mt-3 grid gap-2 rounded-lg border border-border/80 bg-background/70 p-3 sm:grid-cols-2">
+            <div>
+              <dt class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Passkeys</dt>
+              <dd class="mt-1 text-sm font-semibold text-foreground">{passkeyCount}</dd>
+            </div>
+            <div>
+              <dt class="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <CalendarDays class="size-3.5" />
+                First used
+              </dt>
+              <dd class="mt-1 text-sm font-semibold text-foreground">
+                {firstUsedDate ?? 'Not used yet'}
+              </dd>
+            </div>
+          </dl>
         {/if}
       </div>
 

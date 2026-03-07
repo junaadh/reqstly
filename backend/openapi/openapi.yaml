@@ -58,6 +58,7 @@ components:
           type: string
           enum:
             - UNAUTHORIZED
+            - RATE_LIMITED
             - NOT_FOUND
             - VALIDATION_ERROR
             - DATABASE_ERROR
@@ -307,6 +308,202 @@ components:
           type: integer
           enum: [10, 20, 50, 100]
 
+    AuthUserPayload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        is_active:
+          type: boolean
+        email_verified:
+          type: boolean
+      required: [id, email, display_name, is_active, email_verified]
+
+    SignupInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+        display_name:
+          type: string
+          nullable: true
+          maxLength: 120
+      required: [email, password]
+
+    PasswordLoginInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+
+    OkPayload:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+      required: [ok]
+
+    CsrfTokenPayload:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required: [token, expires_at]
+
+    WsTokenPayload:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required: [token, expires_at]
+
+    PasskeyCredentialSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        first_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, created_at]
+
+    PasskeyStats:
+      type: object
+      properties:
+        passkey_count:
+          type: integer
+          minimum: 0
+        first_registered_at:
+          type: string
+          format: date-time
+          nullable: true
+        first_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [passkey_count]
+
+    PasskeyListPayload:
+      type: object
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/PasskeyCredentialSummary'
+        stats:
+          $ref: '#/components/schemas/PasskeyStats'
+      required: [credentials, stats]
+
+    PasskeyChallengePayload:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        options:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, options]
+
+    PasskeyRegisterStartInput:
+      type: object
+      properties:
+        nickname:
+          type: string
+          nullable: true
+          maxLength: 120
+
+    PasskeyRegisterFinishInput:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        credential:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, credential]
+
+    PasskeySignupStartInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+          nullable: true
+          maxLength: 120
+        nickname:
+          type: string
+          nullable: true
+          maxLength: 120
+      required: [email]
+
+    PasskeySignupFinishInput:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        credential:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, credential]
+
+    PasskeyLoginStartInput:
+      type: object
+      additionalProperties: false
+
+    PasskeyLoginFinishInput:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        credential:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, credential]
+
     HealthResponse:
       type: object
       properties:
@@ -385,6 +582,60 @@ components:
           $ref: '#/components/schemas/Meta'
       required: [data, meta]
 
+    AuthUserResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthUserPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    OkResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/OkPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    CsrfTokenResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CsrfTokenPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    WsTokenResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/WsTokenPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    PasskeyListResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PasskeyListPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    PasskeyChallengeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PasskeyChallengePayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
 paths:
   /health:
     get:
@@ -409,6 +660,388 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/auth/signup:
+    post:
+      summary: Sign up with email/password and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupInput'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/login/password:
+    post:
+      summary: Login with email/password and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordLoginInput'
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/csrf:
+    get:
+      summary: Issue CSRF token for authenticated session
+      responses:
+        '200':
+          description: CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfTokenResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/logout:
+    post:
+      summary: Logout current session
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/sessions/revoke:
+    post:
+      summary: Revoke all sessions and ws tokens for current user
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      responses:
+        '200':
+          description: Sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/ws-token:
+    post:
+      summary: Mint short-lived ws bearer token
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      responses:
+        '200':
+          description: Token minted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WsTokenResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys:
+    get:
+      summary: List authenticated user's active passkeys and stats
+      responses:
+        '200':
+          description: Passkey list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/register/start:
+    post:
+      summary: Start passkey enrollment for authenticated user
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyRegisterStartInput'
+      responses:
+        '200':
+          description: Registration challenge generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallengeResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/register/finish:
+    post:
+      summary: Finish passkey enrollment for authenticated user
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyRegisterFinishInput'
+      responses:
+        '200':
+          description: Passkey enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Unauthorized or invalid/expired challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/signup/start:
+    post:
+      summary: Start passwordless passkey signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeySignupStartInput'
+      responses:
+        '200':
+          description: Passkey signup challenge generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallengeResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/signup/finish:
+    post:
+      summary: Finish passwordless passkey signup and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeySignupFinishInput'
+      responses:
+        '201':
+          description: Passkey account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Invalid/expired challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/login/start:
+    post:
+      summary: Start passkey login challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyLoginStartInput'
+      responses:
+        '200':
+          description: Login challenge generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallengeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/login/finish:
+    post:
+      summary: Finish passkey login and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyLoginFinishInput'
+      responses:
+        '200':
+          description: Logged in with passkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Unauthorized or invalid/expired challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /api/v1/me:
     get:

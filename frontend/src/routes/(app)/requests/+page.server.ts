@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 
-import { callBackend } from '$lib/server/backend';
+import { callBackend, withSessionCookie } from '$lib/server/backend';
 import type { ApiEnvelope, ApiListEnvelope, RequestEnums, SupportRequest } from '$lib/types';
 
 const allowedSort = new Set(['created_at', 'updated_at', '-updated_at']);
@@ -8,10 +8,11 @@ const allowedStatus = new Set(['open', 'in_progress', 'resolved']);
 const allowedCategory = new Set(['IT', 'Ops', 'Admin', 'HR']);
 const allowedPriority = new Set(['low', 'medium', 'high']);
 
-export const load: PageServerLoad = async ({ fetch, parent, url, depends }) => {
+export const load: PageServerLoad = async ({ fetch, parent, request, url, depends }) => {
   depends('reqstly:requests:list');
 
-  const { token } = await parent();
+  await parent();
+  const cookieHeader = request.headers.get('cookie');
 
   const status = url.searchParams.get('status') ?? '';
   const category = url.searchParams.get('category') ?? '';
@@ -32,8 +33,12 @@ export const load: PageServerLoad = async ({ fetch, parent, url, depends }) => {
   if (q.trim().length > 0) params.set('q', q.trim());
 
   const [listResponse, enumResponse] = await Promise.all([
-    callBackend(fetch, token, `/requests?${params.toString()}`),
-    callBackend(fetch, token, '/meta/enums')
+    callBackend(
+      fetch,
+      `/requests?${params.toString()}`,
+      withSessionCookie(cookieHeader)
+    ),
+    callBackend(fetch, '/meta/enums', withSessionCookie(cookieHeader))
   ]);
 
   const listPayload =

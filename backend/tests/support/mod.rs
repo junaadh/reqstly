@@ -9,13 +9,16 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use reqstly_backend::{AppState, build_app, db};
 use serde::Serialize;
 use serde_json::{Value, json};
-use sqlx::{Executor, PgPool};
+use sha2::{Digest, Sha256};
+use sqlx::PgPool;
+use time::{Duration, OffsetDateTime};
 use tower::util::ServiceExt;
+use tower_sessions::{MemoryStore, SessionManagerLayer};
 use url::Url;
 use uuid::Uuid;
 
-pub const TEST_JWT_SECRET: &str = "integration-test-secret";
-pub const TEST_JWT_ISSUER: &str = "https://supabase.localhost/auth/v1";
+pub const TEST_WS_TOKEN_SECRET: &str = "integration-test-secret";
+pub const TEST_WS_TOKEN_ISSUER: &str = "reqstly.test/ws";
 const DEFAULT_ADMIN_DATABASE_URL: &str = "postgres://postgres:super-secret-and-long-postgres-password@127.0.0.1:54323/postgres";
 
 #[derive(Debug)]
@@ -50,7 +53,6 @@ impl TestContext {
             .await
             .expect("test db should connect");
 
-        bootstrap_supabase_compat(&pool).await;
         db::run_migrations(&pool)
             .await
             .expect("migrations should apply in test db");
@@ -59,17 +61,27 @@ impl TestContext {
         insert_auth_user(&pool, user_id, "qa@example.com", "qa-user").await;
 
         let token = build_token(user_id);
+        insert_ws_token_issuance(&pool, user_id, &token).await;
         let app = build_app(
             AppState {
                 db: pool.clone(),
-                jwt_secret: TEST_JWT_SECRET.to_string(),
-                jwt_issuer: TEST_JWT_ISSUER.to_string(),
+                ws_token_secret: TEST_WS_TOKEN_SECRET.to_string(),
+                ws_token_issuer: TEST_WS_TOKEN_ISSUER.to_string(),
+                passkey: reqstly_backend::auth::PasskeyService::new(
+                    "localhost",
+                    "https://localhost",
+                    "Reqstly Integration Tests",
+                )
+                .expect("passkey service should initialize"),
                 realtime_hub: reqstly_backend::realtime::RealtimeHub::new(),
                 ws_allowed_origins: vec!["*".to_string()],
             },
             "*",
         )
-        .expect("router should build");
+        .expect("router should build")
+        .layer(
+            SessionManagerLayer::new(MemoryStore::default()).with_secure(false),
+        );
 
         Self {
             app,
@@ -160,11 +172,11 @@ pub fn build_token(user_id: Uuid) -> String {
         TestClaims {
             sub: user_id.to_string(),
             email: "qa@example.com".to_string(),
-            aud: "authenticated".to_string(),
-            iss: TEST_JWT_ISSUER.to_string(),
+            aud: "ws".to_string(),
+            iss: TEST_WS_TOKEN_ISSUER.to_string(),
             exp: 9_999_999_999,
         },
-        TEST_JWT_SECRET,
+        TEST_WS_TOKEN_SECRET,
     )
 }
 
@@ -184,14 +196,12 @@ pub async fn insert_auth_user(
     display_name: &str,
 ) {
     sqlx::query(
-        "INSERT INTO auth.users (id, email, raw_user_meta_data)
+        "INSERT INTO app.app_users (id, email, display_name)
          VALUES ($1, $2, $3)",
     )
     .bind(user_id)
     .bind(email)
-    .bind(json!({
-        "display_name": display_name
-    }))
+    .bind(display_name)
     .execute(pool)
     .await
     .expect("auth user insert should succeed");
@@ -241,22 +251,23 @@ async fn drop_test_database(admin_database_url: &str, db_name: &str) {
     admin_pool.close().await;
 }
 
-async fn bootstrap_supabase_compat(pool: &PgPool) {
-    pool.execute(
-        "CREATE SCHEMA IF NOT EXISTS auth;
-         CREATE TABLE IF NOT EXISTS auth.users (
-           id UUID PRIMARY KEY,
-           email TEXT,
-           raw_user_meta_data JSONB NOT NULL DEFAULT '{}'::jsonb
-         );
-         CREATE OR REPLACE FUNCTION auth.uid()
-         RETURNS UUID
-         LANGUAGE SQL
-         STABLE
-         AS $$
-           SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
-         $$;",
+pub async fn insert_ws_token_issuance(
+    pool: &PgPool,
+    user_id: Uuid,
+    token: &str,
+) {
+    let token_fingerprint = Sha256::digest(token.as_bytes()).to_vec();
+    let expires_at = OffsetDateTime::now_utc() + Duration::hours(1);
+
+    sqlx::query(
+        "INSERT INTO app.ws_token_issuances
+           (user_id, token_fingerprint, expires_at, metadata)
+         VALUES ($1, $2, $3, '{}'::jsonb)",
     )
+    .bind(user_id)
+    .bind(token_fingerprint)
+    .bind(expires_at)
+    .execute(pool)
     .await
-    .expect("supabase compatibility objects should be created");
+    .expect("test ws token issuance insert should succeed");
 }
