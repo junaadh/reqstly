@@ -1,50 +1,22 @@
 # Reqstly
 
-Reqstly is in a big-bang rewrite with strict phase ordering.
+Reqstly is a request-management platform with an embedded-auth Rust backend, SvelteKit frontend, and self-hosted infrastructure.
 
-## Rewrite Order
+## Stack
 
-1. Backend core
-2. Backend hardening and tests
-3. Frontend rewrite (SvelteKit)
-4. Observability
-5. Auth/data platform refactor (Phase 5 baseline completed)
+- Backend: Rust, Axum, SQLx, PostgreSQL
+- Frontend: SvelteKit, Bun, Tailwind, shadcn-svelte
+- Auth: backend-owned auth (`password-auth`, `webauthn-rs`, `tower-sessions`)
+- Realtime: Axum WebSocket (`/ws`)
+- Infra: Docker Compose, Caddy, Redis, Prometheus, Loki, Promtail, Grafana
 
-## Phase Snapshot (March 7, 2026)
+## Identity and Auth Model
 
-- Phase 0: complete
-- Phase 1: complete
-- Phase 2: complete
-- Phase 3: complete
-- Phase 4: complete
-- Phase 5: baseline completed (embedded auth)
-
-## Target Stack (Phase 5 Baseline)
-
-- Backend: Rust + Axum + SQLx
-- Frontend: SvelteKit + Bun + Tailwind + shadcn-svelte
-- Database: PostgreSQL (`app.*` schema)
-- Auth (embedded in backend):
-  - `password-auth` for password hashing/verification
-  - `webauthn-rs` for passkeys
-  - `tower-sessions` + SQLx store for first-party sessions
-- Realtime: Axum WebSocket (`/ws`) with cookie-first auth + ws bearer compatibility
-- Infra: Caddy, Redis, Observability stack, Docker Compose
-
-## Identity Model
-
-- `app.app_users` is canonical app identity.
-- Business FKs point only to `app.app_users.id`.
-- No business coupling to Supabase/authentik/internal provider tables.
-
-## Auth Surface (Current)
-
-- Password signup/login + session cookies
-- Passkey signup (email + display name), passkey enrollment, passkey login
-- CSRF token issuance/validation for authenticated browser mutations
-- WebSocket dual auth:
-  - cookie session
-  - short-lived ws bearer token minted from `/api/v1/auth/ws-token`
+- `app.app_users` is the canonical identity table.
+- Business foreign keys point only to `app.app_users.id`.
+- Password + passkey auth is first-party and handled in backend `/api/v1/auth/*` routes.
+- Browser auth is cookie/session-first.
+- WebSocket supports session and ws bearer-token compatibility (`/api/v1/auth/ws-token`).
 
 ## Repository Layout
 
@@ -53,9 +25,6 @@ reqstly/
 ├── backend/
 ├── frontend/
 ├── docs/
-│   ├── PLAN.md
-│   ├── frontend_functionality.md
-│   └── improvements.md
 ├── infra/
 │   ├── docker-compose.dev.yml
 │   ├── docker-compose.yml
@@ -70,29 +39,27 @@ reqstly/
 
 ## Local Development
 
-Canonical entrypoints (kept unchanged during migration):
-
-- `./scripts/setup-dev.sh`
-- `./scripts/up-dev.sh`
-- `./scripts/reset-dev-db.sh`
-- `./scripts/test-backend.sh`
-- `./scripts/smoke-check.sh`
-- `./scripts/up-prod.sh`
-
-### Prerequisites
+Prerequisites:
 
 - Docker with Compose plugin
+- `bun`
 - `curl`
 - `openssl`
-- `bun`
 
-### Start Stack
+Setup and run:
 
 ```bash
+./scripts/setup-dev.sh
 ./scripts/up-dev.sh
 ```
 
-### Backend Checks
+Useful commands:
+
+- `./scripts/reset-dev-db.sh`
+- `./scripts/test-backend.sh`
+- `./scripts/smoke-check.sh`
+
+Backend checks:
 
 ```bash
 cd backend
@@ -101,7 +68,7 @@ cargo check
 cargo test --lib
 ```
 
-### Frontend Checks
+Frontend checks:
 
 ```bash
 cd frontend
@@ -110,20 +77,18 @@ bun run check
 bun run build
 ```
 
-### Smoke Checks
+## Production Deploy
 
-```bash
-./scripts/smoke-check.sh
-```
+- Use `.env` values for target environment.
+- Place Cloudflare origin cert/key on host:
+  - `~/certs/reqstly.pem`
+  - `~/certs/reqstly.key`
+- Restrict permissions (`chmod 600`).
+- Ensure certificate SANs cover both `APP_DOMAIN` and `API_DOMAIN`.
+  - Example: `*.reqstly.com` does not cover `api.dev.reqstly.com`.
+  - Include `api.dev.reqstly.com` or `*.dev.reqstly.com` for dev API subdomains.
 
-## Production
-
-Use `.env` production values, then:
-
-- place Cloudflare origin cert/key on the host under `~/certs/reqstly.pem` and `~/certs/reqstly.key`
-- keep permissions locked down (`chmod 600`)
-- ensure cert SANs cover both `APP_DOMAIN` and `API_DOMAIN` used by the target environment
-  - for dev subdomains, `*.reqstly.com` does not cover `api.dev.reqstly.com`; include `api.dev.reqstly.com` or `*.dev.reqstly.com`
+Start/update stack:
 
 ```bash
 ./scripts/up-prod.sh
@@ -131,26 +96,17 @@ Use `.env` production values, then:
 
 ## CI/CD
 
-Deployment targets are branch-based:
-
-1. Build/test
-2. Push `dev` -> deploy `dev`
-3. Push `master` -> deploy `production`
-
-Smoke checks run in CI against the local stack.
-
-## Tooling Conventions
-
-- Prefer `bun` over `npm`
-- Prefer `bunx` over `npx`
+- Push `dev` => CI + deploy to dev environment
+- Push `master` => CI + deploy to production environment
+- Smoke checks run in CI
 
 ## Documentation
 
 - Plan and gates: [docs/PLAN.md](docs/PLAN.md)
-- Phase 5 checklist: [docs/improvements.md](docs/improvements.md)
+- Improvements and checklist: [docs/improvements.md](docs/improvements.md)
 - Frontend/API map: [docs/frontend_functionality.md](docs/frontend_functionality.md)
 - Infra runbook: [infra/README.md](infra/README.md)
-- Agent rules: [AGENTS.md](AGENTS.md)
+- Agent conventions: [AGENTS.md](AGENTS.md)
 
 ## License
 
