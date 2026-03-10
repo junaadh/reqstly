@@ -22,6 +22,14 @@ https://{$APP_DOMAIN:reqstly.com} {
 		respond `{"status":"ok","service":"caddy"}` 200
 	}
 
+	@backend_ws {
+		path /ws /ws/*
+	}
+
+	handle @backend_ws {
+		reverse_proxy backend:3000
+	}
+
 	handle {
 		reverse_proxy frontend:3000
 	}
