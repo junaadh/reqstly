@@ -124,6 +124,12 @@ services:
   caddy:
     container_name: caddy
     image: caddy:2.7-alpine
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL}
+      CADDY_TLS_CERT_FILE: ${CADDY_TLS_CERT_FILE:-/certs/reqstly.pem}
+      CADDY_TLS_KEY_FILE: ${CADDY_TLS_KEY_FILE:-/certs/reqstly.key}
     ports:
       - "80:80"
       - "443:443"
