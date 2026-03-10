@@ -140,7 +140,9 @@ jobs:
               echo \"CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs\"
               echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
               echo \"CADDY_TLS_KEY_FILE=/certs/reqstly.key\"
-              echo \"COMPOSE_PROJECT_NAME=reqstly\"
+              echo \"COMPOSE_PROJECT_NAME=reqstly-dev\"
+              echo \"SERVICE_ALIAS_PREFIX=dev\"
+              echo \"EDGE_NETWORK_NAME=reqstly-edge\"
               echo \"POSTGRES_HOST=db\"
               echo \"POSTGRES_DB=postgres\"
               echo \"POSTGRES_PORT=5432\"
@@ -170,6 +172,7 @@ jobs:
               echo \"FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}\"
             } > .env
 
+            docker network inspect reqstly-edge >/dev/null 2>&1 || docker network create reqstly-edge >/dev/null
             docker compose --env-file ${APP_DIR}/.env -f infra/docker-compose.yml pull backend frontend
             COMPOSE_BUILD=0 ./scripts/up-prod.sh
           "
@@ -238,6 +241,15 @@ jobs:
               echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
               echo \"CADDY_TLS_KEY_FILE=/certs/reqstly.key\"
               echo \"COMPOSE_PROJECT_NAME=reqstly\"
+              echo \"COMPOSE_PROFILES=edge,obs\"
+              echo \"SERVICE_ALIAS_PREFIX=prod\"
+              echo \"EDGE_NETWORK_NAME=reqstly-edge\"
+              echo \"DEV_APP_DOMAIN=dev.reqstly.com\"
+              echo \"DEV_API_DOMAIN=api.dev.reqstly.com\"
+              echo \"PROD_BACKEND_UPSTREAM=prod-backend\"
+              echo \"PROD_FRONTEND_UPSTREAM=prod-frontend\"
+              echo \"DEV_BACKEND_UPSTREAM=dev-backend\"
+              echo \"DEV_FRONTEND_UPSTREAM=dev-frontend\"
               echo \"POSTGRES_HOST=db\"
               echo \"POSTGRES_DB=postgres\"
               echo \"POSTGRES_PORT=5432\"
@@ -267,6 +279,7 @@ jobs:
               echo \"FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}\"
             } > .env
 
+            docker network inspect reqstly-edge >/dev/null 2>&1 || docker network create reqstly-edge >/dev/null
             docker compose --env-file /home/${DEPLOY_USER}/reqstly/.env -f infra/docker-compose.yml pull backend frontend
             COMPOSE_BUILD=0 ./scripts/up-prod.sh
           "

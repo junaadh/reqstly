@@ -37,7 +37,7 @@ COMPOSE_WAIT_TIMEOUT="${COMPOSE_WAIT_TIMEOUT:-600}"
 COMPOSE_BUILD="${COMPOSE_BUILD:-1}"
 BACKEND_HEALTH_TIMEOUT="${BACKEND_HEALTH_TIMEOUT:-600}"
 BACKEND_HEALTH_INTERVAL="${BACKEND_HEALTH_INTERVAL:-2}"
-BACKEND_HEALTH_CONTAINER="${BACKEND_HEALTH_CONTAINER:-backend}"
+BACKEND_HEALTH_CONTAINER="${BACKEND_HEALTH_CONTAINER:-}"
 
 compose_cmd=(
   docker compose
@@ -56,10 +56,21 @@ fi
 
 "${compose_cmd[@]}" "${compose_up_args[@]}" "$@"
 
-echo "Waiting for backend health (${BACKEND_HEALTH_CONTAINER})..."
+backend_health_target="${BACKEND_HEALTH_CONTAINER}"
+if [[ -z "${backend_health_target}" ]]; then
+  backend_health_target="$("${compose_cmd[@]}" ps -q backend | head -n 1)"
+fi
+
+if [[ -z "${backend_health_target}" ]]; then
+  echo "Could not resolve backend container id for health checks."
+  "${compose_cmd[@]}" ps || true
+  exit 1
+fi
+
+echo "Waiting for backend health (${backend_health_target})..."
 elapsed=0
 while (( elapsed < BACKEND_HEALTH_TIMEOUT )); do
-  health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${BACKEND_HEALTH_CONTAINER}" 2>/dev/null || true)"
+  health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${backend_health_target}" 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]]; then
     echo "Backend is healthy."
     exit 0
@@ -70,5 +81,5 @@ while (( elapsed < BACKEND_HEALTH_TIMEOUT )); do
 done
 
 echo "Backend did not become healthy within ${BACKEND_HEALTH_TIMEOUT}s."
-docker logs --tail 200 "${BACKEND_HEALTH_CONTAINER}" || true
+"${compose_cmd[@]}" logs --tail 200 backend || true
 exit 1

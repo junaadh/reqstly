@@ -4,7 +4,7 @@
 
 https://{$API_DOMAIN:api.reqstly.com} {
 	tls {$CADDY_TLS_CERT_FILE:/certs/reqstly.pem} {$CADDY_TLS_KEY_FILE:/certs/reqstly.key}
-	reverse_proxy backend:3000
+	reverse_proxy {$PROD_BACKEND_UPSTREAM:prod-backend}:3000
 
 	log {
 		output file /dev/stdout
@@ -27,11 +27,49 @@ https://{$APP_DOMAIN:reqstly.com} {
 	}
 
 	handle @backend_ws {
-		reverse_proxy backend:3000
+		reverse_proxy {$PROD_BACKEND_UPSTREAM:prod-backend}:3000
 	}
 
 	handle {
-		reverse_proxy frontend:3000
+		reverse_proxy {$PROD_FRONTEND_UPSTREAM:prod-frontend}:3000
+	}
+
+	log {
+		output file /dev/stdout
+		format console
+	}
+}
+
+https://{$DEV_API_DOMAIN:api.dev.reqstly.com} {
+	tls {$CADDY_TLS_CERT_FILE:/certs/reqstly.pem} {$CADDY_TLS_KEY_FILE:/certs/reqstly.key}
+	reverse_proxy {$DEV_BACKEND_UPSTREAM:dev-backend}:3000
+
+	log {
+		output file /dev/stdout
+		format console
+	}
+}
+
+https://{$DEV_APP_DOMAIN:dev.reqstly.com} {
+	tls {$CADDY_TLS_CERT_FILE:/certs/reqstly.pem} {$CADDY_TLS_KEY_FILE:/certs/reqstly.key}
+	handle /health {
+		header {
+			X-Service "caddy"
+			Content-Type application/json
+		}
+		respond `{"status":"ok","service":"caddy"}` 200
+	}
+
+	@backend_ws {
+		path /ws /ws/*
+	}
+
+	handle @backend_ws {
+		reverse_proxy {$DEV_BACKEND_UPSTREAM:dev-backend}:3000
+	}
+
+	handle {
+		reverse_proxy {$DEV_FRONTEND_UPSTREAM:dev-frontend}:3000
 	}
 
 	log {

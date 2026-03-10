@@ -99,6 +99,7 @@ Start/update stack:
 - Push `dev` => CI + deploy to dev environment
 - Push `master` => CI + deploy to production environment
 - Smoke checks run in CI
+- Dev and prod run as isolated compose projects on the same VPS (`reqstly-dev` and `reqstly`) with a shared edge caddy route layer.
 
 ## Documentation
 
