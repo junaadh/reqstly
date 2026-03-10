@@ -1,5 +1,6 @@
 services:
   db:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-db
     image: postgres:16
     environment:
       POSTGRES_USER: postgres
@@ -16,6 +17,7 @@ services:
     restart: unless-stopped
 
   redis:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-redis
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     healthcheck:
@@ -28,6 +30,7 @@ services:
       - redis-data:/data
 
   migrate:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-migrate
     image: nxyt/sqlx-cli:v0.70
     platform: linux/amd64
     command: >
@@ -45,6 +48,7 @@ services:
       - ../backend/migrations:/migrations:ro
 
   backend:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-backend
     image: ${BACKEND_IMAGE:-reqstly-backend}:${BACKEND_IMAGE_TAG:-local}
     build:
       context: ../backend
@@ -88,6 +92,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-frontend
     image: ${FRONTEND_IMAGE:-reqstly-frontend}:${FRONTEND_IMAGE_TAG:-local}
     build:
       context: ../frontend
@@ -113,7 +118,7 @@ services:
       HOST_HEADER: x-forwarded-host
       PORT_HEADER: x-forwarded-port
       PUBLIC_API_BASE_URL: ${API_URL}
-      PRIVATE_API_BASE_URL: ${PRIVATE_API_BASE_URL:-http://backend:3000}
+      PRIVATE_API_BASE_URL: ${PRIVATE_API_BASE_URL:-http://${SERVICE_ALIAS_PREFIX:-prod}-backend:3000}
     depends_on:
       backend:
         condition: service_healthy
@@ -127,6 +132,7 @@ services:
     restart: unless-stopped
 
   caddy:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-caddy
     image: caddy:2.7-alpine
     profiles: ["edge"]
     environment:
@@ -157,6 +163,7 @@ services:
       - caddy-config:/config
 
   postgres-exporter:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-postgres-exporter
     image: prometheuscommunity/postgres-exporter:v0.16.0
     profiles: ["obs"]
     environment:
@@ -169,6 +176,7 @@ services:
     restart: unless-stopped
 
   redis-exporter:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-redis-exporter
     image: oliver006/redis_exporter:v1.62.0
     profiles: ["obs"]
     environment:
@@ -181,6 +189,7 @@ services:
     restart: unless-stopped
 
   loki:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-loki
     image: grafana/loki:2.9.8
     profiles: ["obs"]
     command: ["-config.file=/etc/loki/config.yml"]
@@ -192,6 +201,7 @@ services:
     restart: unless-stopped
 
   promtail:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-promtail
     image: grafana/promtail:2.9.8
     profiles: ["obs"]
     command: ["-config.file=/etc/promtail/config.yml"]
@@ -204,6 +214,7 @@ services:
     restart: unless-stopped
 
   prometheus:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-prometheus
     image: prom/prometheus:v2.53.2
     profiles: ["obs"]
     command:
@@ -226,6 +237,7 @@ services:
     restart: unless-stopped
 
   grafana:
+    container_name: ${COMPOSE_PROJECT_NAME:-reqstly}-grafana
     image: grafana/grafana:11.2.2
     profiles: ["obs"]
     environment:

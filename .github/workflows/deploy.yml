@@ -41,7 +41,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}-backend:${{ github.sha }}
-            ghcr.io/${{ github.repository }}-backend:main
+            ghcr.io/${{ github.repository }}-backend:${{ github.ref_name }}
           cache-from: type=gha,scope=reqstly-backend
           cache-to: type=gha,mode=max,scope=reqstly-backend
 
@@ -72,7 +72,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}-frontend:${{ github.sha }}
-            ghcr.io/${{ github.repository }}-frontend:main
+            ghcr.io/${{ github.repository }}-frontend:${{ github.ref_name }}
           cache-from: type=gha,scope=reqstly-frontend
           cache-to: type=gha,mode=max,scope=reqstly-frontend
 
@@ -113,9 +113,9 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           LOGGING_LEVEL: ${{ secrets.LOGGING_LEVEL }}
           BACKEND_IMAGE: ghcr.io/${{ github.repository }}-backend
-          BACKEND_IMAGE_TAG: ${{ github.sha }}
+          BACKEND_IMAGE_TAG: dev
           FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
-          FRONTEND_IMAGE_TAG: ${{ github.sha }}
+          FRONTEND_IMAGE_TAG: dev
           APP_DIR: /home/${{ secrets.DEPLOY_SSH_USER }}/reqstly-dev
         run: |
           POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
@@ -135,7 +135,7 @@ jobs:
               echo \"API_DOMAIN=${API_DOMAIN}\"
               echo \"APP_URL=${APP_URL}\"
               echo \"API_URL=${API_URL}\"
-              echo \"PRIVATE_API_BASE_URL=http://backend:3000\"
+              echo \"PRIVATE_API_BASE_URL=http://dev-backend:3000\"
               echo \"CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}\"
               echo \"CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs\"
               echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
@@ -214,9 +214,9 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           LOGGING_LEVEL: ${{ secrets.LOGGING_LEVEL }}
           BACKEND_IMAGE: ghcr.io/${{ github.repository }}-backend
-          BACKEND_IMAGE_TAG: ${{ github.sha }}
+          BACKEND_IMAGE_TAG: master
           FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
-          FRONTEND_IMAGE_TAG: ${{ github.sha }}
+          FRONTEND_IMAGE_TAG: master
         run: |
           POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
           ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
@@ -235,7 +235,7 @@ jobs:
               echo \"API_DOMAIN=${API_DOMAIN}\"
               echo \"APP_URL=${APP_URL}\"
               echo \"API_URL=${API_URL}\"
-              echo \"PRIVATE_API_BASE_URL=http://backend:3000\"
+              echo \"PRIVATE_API_BASE_URL=http://prod-backend:3000\"
               echo \"CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}\"
               echo \"CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs\"
               echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
