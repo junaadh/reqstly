@@ -654,16 +654,18 @@ pub async fn finish_passkey_signup(
 
     let user = repo::create_user_with_passkey(
         &state.db,
-        signup_payload.user_id,
-        &signup_payload.email,
-        &signup_payload.display_name,
-        credential_id.as_slice(),
-        passkey::to_json_value(&passkey)?,
-        0,
-        challenge
-            .challenge_blob
-            .get("nickname")
-            .and_then(|value| value.as_str()),
+        repo::CreateUserWithPasskeyInput {
+            user_id: signup_payload.user_id,
+            email: &signup_payload.email,
+            display_name: &signup_payload.display_name,
+            credential_id: credential_id.as_slice(),
+            credential_json: passkey::to_json_value(&passkey)?,
+            sign_count: 0,
+            nickname: challenge
+                .challenge_blob
+                .get("nickname")
+                .and_then(|value| value.as_str()),
+        },
     )
     .await?;
 
@@ -792,12 +794,12 @@ pub async fn finish_passkey_login(
         AppError::Unauthorized("passkey credential not recognized".to_string())
     })?;
 
-    if let Some(challenge_user_id) = challenge.user_id {
-        if row.user_id != challenge_user_id {
-            return Err(AppError::Unauthorized(
-                "passkey credential user mismatch".to_string(),
-            ));
-        }
+    if let Some(challenge_user_id) = challenge.user_id
+        && row.user_id != challenge_user_id
+    {
+        return Err(AppError::Unauthorized(
+            "passkey credential user mismatch".to_string(),
+        ));
     }
 
     let mut stored_passkey: Passkey =

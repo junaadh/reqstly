@@ -116,59 +116,59 @@ jobs:
           BACKEND_IMAGE_TAG: ${{ github.sha }}
           FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
           FRONTEND_IMAGE_TAG: ${{ github.sha }}
+          APP_DIR: /home/${{ secrets.DEPLOY_SSH_USER }}/reqstly-dev
         run: |
           ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
             set -e
 
-            if [ ! -d ~/reqstly ]; then
-              git clone https://github.com/junaadh/reqstly.git ~/reqstly
+            if [ ! -d ${APP_DIR} ]; then
+              git clone https://github.com/junaadh/reqstly.git ${APP_DIR}
             fi
 
-            cd ~/reqstly
+            cd ${APP_DIR}
             git fetch --all
             git reset --hard ${{ github.sha }}
 
-            cat > .env <<ENVVARS
-            APP_DOMAIN=${APP_DOMAIN}
-            API_DOMAIN=${API_DOMAIN}
-            APP_URL=${APP_URL}
-            API_URL=${API_URL}
-            PRIVATE_API_BASE_URL=http://backend:3000
-            CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}
-            CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs
-            CADDY_TLS_CERT_FILE=/certs/reqstly.pem
-            CADDY_TLS_KEY_FILE=/certs/reqstly.key
-            COMPOSE_PROJECT_NAME=reqstly
-            POSTGRES_HOST=db
-            POSTGRES_DB=postgres
-            POSTGRES_PORT=5432
-            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}
-            AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}
-            AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}
-            AUTH__SESSION_IDLE_MINUTES=${AUTH_SESSION_IDLE_MINUTES}
-            AUTH__SESSION_SECURE=${AUTH_SESSION_SECURE}
-            AUTH__WEBAUTHN_RP_ID=${AUTH_WEBAUTHN_RP_ID}
-            AUTH__WEBAUTHN_RP_ORIGIN=${AUTH_WEBAUTHN_RP_ORIGIN}
-            AUTH__WEBAUTHN_RP_NAME=${AUTH_WEBAUTHN_RP_NAME}
-            SERVER__BASE_URL=${API_URL}
-            CORS__ALLOWED_ORIGIN=${APP_URL}
-            LOGGING__LEVEL=${LOGGING_LEVEL}
-            LOGGING__FORMAT=json
-            LOGGING__SERVICE_NAME=reqstly-backend
-            LOGGING__ENVIRONMENT=dev
-            PUBLIC_API_BASE_URL=${API_URL}
-            ORIGIN=${APP_URL}
-            GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}
-            GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-            BACKEND_IMAGE=${BACKEND_IMAGE}
-            BACKEND_IMAGE_TAG=${BACKEND_IMAGE_TAG}
-            FRONTEND_IMAGE=${FRONTEND_IMAGE}
-            FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}
-            ENVVARS
-            sed -i 's/^ *//' .env
+            {
+              echo \"APP_DOMAIN=${APP_DOMAIN}\"
+              echo \"API_DOMAIN=${API_DOMAIN}\"
+              echo \"APP_URL=${APP_URL}\"
+              echo \"API_URL=${API_URL}\"
+              echo \"PRIVATE_API_BASE_URL=http://backend:3000\"
+              echo \"CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}\"
+              echo \"CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs\"
+              echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
+              echo \"CADDY_TLS_KEY_FILE=/certs/reqstly.key\"
+              echo \"COMPOSE_PROJECT_NAME=reqstly\"
+              echo \"POSTGRES_HOST=db\"
+              echo \"POSTGRES_DB=postgres\"
+              echo \"POSTGRES_PORT=5432\"
+              echo \"POSTGRES_PASSWORD=${POSTGRES_PASSWORD}\"
+              echo \"AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}\"
+              echo \"AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}\"
+              echo \"AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}\"
+              echo \"AUTH__SESSION_IDLE_MINUTES=${AUTH_SESSION_IDLE_MINUTES}\"
+              echo \"AUTH__SESSION_SECURE=${AUTH_SESSION_SECURE}\"
+              echo \"AUTH__WEBAUTHN_RP_ID=${AUTH_WEBAUTHN_RP_ID}\"
+              echo \"AUTH__WEBAUTHN_RP_ORIGIN=${AUTH_WEBAUTHN_RP_ORIGIN}\"
+              echo \"AUTH__WEBAUTHN_RP_NAME=${AUTH_WEBAUTHN_RP_NAME}\"
+              echo \"SERVER__BASE_URL=${API_URL}\"
+              echo \"CORS__ALLOWED_ORIGIN=${APP_URL}\"
+              echo \"LOGGING__LEVEL=${LOGGING_LEVEL}\"
+              echo \"LOGGING__FORMAT=json\"
+              echo \"LOGGING__SERVICE_NAME=reqstly-backend\"
+              echo \"LOGGING__ENVIRONMENT=dev\"
+              echo \"PUBLIC_API_BASE_URL=${API_URL}\"
+              echo \"ORIGIN=${APP_URL}\"
+              echo \"GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}\"
+              echo \"GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}\"
+              echo \"BACKEND_IMAGE=${BACKEND_IMAGE}\"
+              echo \"BACKEND_IMAGE_TAG=${BACKEND_IMAGE_TAG}\"
+              echo \"FRONTEND_IMAGE=${FRONTEND_IMAGE}\"
+              echo \"FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}\"
+            } > .env
 
-            docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml pull backend frontend
+            docker compose --env-file ${APP_DIR}/.env -f infra/docker-compose.yml pull backend frontend
             COMPOSE_BUILD=0 ./scripts/up-prod.sh
           "
 
@@ -216,54 +216,53 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
             set -e
 
-            if [ ! -d ~/reqstly ]; then
-              git clone https://github.com/junaadh/reqstly.git ~/reqstly
+            if [ ! -d /home/${DEPLOY_USER}/reqstly ]; then
+              git clone https://github.com/junaadh/reqstly.git /home/${DEPLOY_USER}/reqstly
             fi
 
-            cd ~/reqstly
+            cd /home/${DEPLOY_USER}/reqstly
             git fetch --all
             git reset --hard ${{ github.sha }}
 
-            cat > .env <<ENVVARS
-            APP_DOMAIN=${APP_DOMAIN}
-            API_DOMAIN=${API_DOMAIN}
-            APP_URL=${APP_URL}
-            API_URL=${API_URL}
-            PRIVATE_API_BASE_URL=http://backend:3000
-            CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}
-            CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs
-            CADDY_TLS_CERT_FILE=/certs/reqstly.pem
-            CADDY_TLS_KEY_FILE=/certs/reqstly.key
-            COMPOSE_PROJECT_NAME=reqstly
-            POSTGRES_HOST=db
-            POSTGRES_DB=postgres
-            POSTGRES_PORT=5432
-            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}
-            AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}
-            AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}
-            AUTH__SESSION_IDLE_MINUTES=${AUTH_SESSION_IDLE_MINUTES}
-            AUTH__SESSION_SECURE=${AUTH_SESSION_SECURE}
-            AUTH__WEBAUTHN_RP_ID=${AUTH_WEBAUTHN_RP_ID}
-            AUTH__WEBAUTHN_RP_ORIGIN=${AUTH_WEBAUTHN_RP_ORIGIN}
-            AUTH__WEBAUTHN_RP_NAME=${AUTH_WEBAUTHN_RP_NAME}
-            SERVER__BASE_URL=${API_URL}
-            CORS__ALLOWED_ORIGIN=${APP_URL}
-            LOGGING__LEVEL=${LOGGING_LEVEL}
-            LOGGING__FORMAT=json
-            LOGGING__SERVICE_NAME=reqstly-backend
-            LOGGING__ENVIRONMENT=production
-            PUBLIC_API_BASE_URL=${API_URL}
-            ORIGIN=${APP_URL}
-            GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}
-            GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-            BACKEND_IMAGE=${BACKEND_IMAGE}
-            BACKEND_IMAGE_TAG=${BACKEND_IMAGE_TAG}
-            FRONTEND_IMAGE=${FRONTEND_IMAGE}
-            FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}
-            ENVVARS
-            sed -i 's/^ *//' .env
+            {
+              echo \"APP_DOMAIN=${APP_DOMAIN}\"
+              echo \"API_DOMAIN=${API_DOMAIN}\"
+              echo \"APP_URL=${APP_URL}\"
+              echo \"API_URL=${API_URL}\"
+              echo \"PRIVATE_API_BASE_URL=http://backend:3000\"
+              echo \"CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}\"
+              echo \"CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs\"
+              echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
+              echo \"CADDY_TLS_KEY_FILE=/certs/reqstly.key\"
+              echo \"COMPOSE_PROJECT_NAME=reqstly\"
+              echo \"POSTGRES_HOST=db\"
+              echo \"POSTGRES_DB=postgres\"
+              echo \"POSTGRES_PORT=5432\"
+              echo \"POSTGRES_PASSWORD=${POSTGRES_PASSWORD}\"
+              echo \"AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}\"
+              echo \"AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}\"
+              echo \"AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}\"
+              echo \"AUTH__SESSION_IDLE_MINUTES=${AUTH_SESSION_IDLE_MINUTES}\"
+              echo \"AUTH__SESSION_SECURE=${AUTH_SESSION_SECURE}\"
+              echo \"AUTH__WEBAUTHN_RP_ID=${AUTH_WEBAUTHN_RP_ID}\"
+              echo \"AUTH__WEBAUTHN_RP_ORIGIN=${AUTH_WEBAUTHN_RP_ORIGIN}\"
+              echo \"AUTH__WEBAUTHN_RP_NAME=${AUTH_WEBAUTHN_RP_NAME}\"
+              echo \"SERVER__BASE_URL=${API_URL}\"
+              echo \"CORS__ALLOWED_ORIGIN=${APP_URL}\"
+              echo \"LOGGING__LEVEL=${LOGGING_LEVEL}\"
+              echo \"LOGGING__FORMAT=json\"
+              echo \"LOGGING__SERVICE_NAME=reqstly-backend\"
+              echo \"LOGGING__ENVIRONMENT=production\"
+              echo \"PUBLIC_API_BASE_URL=${API_URL}\"
+              echo \"ORIGIN=${APP_URL}\"
+              echo \"GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}\"
+              echo \"GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}\"
+              echo \"BACKEND_IMAGE=${BACKEND_IMAGE}\"
+              echo \"BACKEND_IMAGE_TAG=${BACKEND_IMAGE_TAG}\"
+              echo \"FRONTEND_IMAGE=${FRONTEND_IMAGE}\"
+              echo \"FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}\"
+            } > .env
 
-            docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml pull backend frontend
+            docker compose --env-file /home/${DEPLOY_USER}/reqstly/.env -f infra/docker-compose.yml pull backend frontend
             COMPOSE_BUILD=0 ./scripts/up-prod.sh
           "

@@ -138,15 +138,19 @@ pub async fn create_user_with_password(
     Ok(user.into())
 }
 
+pub struct CreateUserWithPasskeyInput<'a> {
+    pub user_id: Uuid,
+    pub email: &'a str,
+    pub display_name: &'a str,
+    pub credential_id: &'a [u8],
+    pub credential_json: Value,
+    pub sign_count: i64,
+    pub nickname: Option<&'a str>,
+}
+
 pub async fn create_user_with_passkey(
     pool: &PgPool,
-    user_id: Uuid,
-    email: &str,
-    display_name: &str,
-    credential_id: &[u8],
-    credential_json: Value,
-    sign_count: i64,
-    nickname: Option<&str>,
+    input: CreateUserWithPasskeyInput<'_>,
 ) -> Result<AuthUserProfile, AppError> {
     let mut tx = pool.begin().await?;
 
@@ -155,9 +159,9 @@ pub async fn create_user_with_passkey(
          VALUES ($1, $2, $3)
          RETURNING id, email, display_name, is_active, email_verified",
     )
-    .bind(user_id)
-    .bind(email)
-    .bind(display_name)
+    .bind(input.user_id)
+    .bind(input.email)
+    .bind(input.display_name)
     .fetch_one(&mut *tx)
     .await
     .map_err(map_create_user_error)?;
@@ -176,10 +180,10 @@ pub async fn create_user_with_passkey(
          WHERE app.user_passkey_credentials.user_id = EXCLUDED.user_id",
     )
     .bind(user.id)
-    .bind(credential_id)
-    .bind(credential_json)
-    .bind(sign_count)
-    .bind(nickname)
+    .bind(input.credential_id)
+    .bind(input.credential_json)
+    .bind(input.sign_count)
+    .bind(input.nickname)
     .execute(&mut *tx)
     .await?;
 
@@ -797,18 +801,15 @@ pub async fn update_passkey_usage(
 }
 
 fn map_create_user_error(error: sqlx::Error) -> AppError {
-    if let sqlx::Error::Database(db_error) = &error {
-        if let Some(constraint) = db_error.constraint() {
-            if constraint == "idx_app_users_email_ci_unique"
-                || constraint == "idx_user_password_identities_email_ci_unique"
-            {
-                return AppError::Validation(vec![ErrorDetail {
-                    field: "email".to_string(),
-                    message: "an account with this email already exists"
-                        .to_string(),
-                }]);
-            }
-        }
+    if let sqlx::Error::Database(db_error) = &error
+        && let Some(constraint) = db_error.constraint()
+        && (constraint == "idx_app_users_email_ci_unique"
+            || constraint == "idx_user_password_identities_email_ci_unique")
+    {
+        return AppError::Validation(vec![ErrorDetail {
+            field: "email".to_string(),
+            message: "an account with this email already exists".to_string(),
+        }]);
     }
 
     AppError::Database(error)
