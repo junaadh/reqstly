@@ -7,7 +7,7 @@ Infrastructure baseline is:
 - Reqstly backend + frontend
 - PostgreSQL for app data and session store
 - Embedded backend auth (no authentik in baseline runtime)
-- Caddy reverse proxy
+- Caddy reverse proxy (single edge instance)
 - Redis
 - Observability stack (`infra/observability/`)
 
@@ -16,6 +16,20 @@ Supabase infrastructure artifacts are no longer part of active runtime.
 Entra/OIDC runtime is deferred to Phase D.
 
 ## Compose Model
+
+Production compose uses profile-based service activation:
+
+- core services: always enabled (`db`, `redis`, `migrate`, `backend`, `frontend`)
+- edge services: `profiles: ["edge"]` (`caddy`)
+- observability services: `profiles: ["obs"]`
+
+On VPS:
+
+- prod project: `COMPOSE_PROJECT_NAME=reqstly` with `COMPOSE_PROFILES=edge,obs`
+- dev project: `COMPOSE_PROJECT_NAME=reqstly-dev` with no profiles (core only)
+- shared network for cross-project routing: `EDGE_NETWORK_NAME=reqstly-edge`
+
+This allows prod and dev to run simultaneously without container/volume collisions.
 
 Use existing script entrypoints for orchestration:
 
@@ -71,6 +85,7 @@ Canonical env definitions live in:
 - `CADDY_TLS_CERT_FILE` (container path, default `/certs/reqstly.pem`)
 - `CADDY_TLS_KEY_FILE` (container path, default `/certs/reqstly.key`)
 - `APP_DOMAIN` and `API_DOMAIN` are passed into the caddy container and used by Caddyfile env placeholders.
+- `DEV_APP_DOMAIN` and `DEV_API_DOMAIN` are routed by the same edge caddy to the dev stack over `reqstly-edge`.
 
 ### Logging/telemetry
 
