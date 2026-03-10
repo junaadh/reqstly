@@ -132,8 +132,10 @@ Use `.env` production values, then:
 Deployment targets are branch-based:
 
 1. Build/test
-2. Push `dev` -> deploy + smoke `dev`
-3. Push `master` -> deploy + smoke `production`
+2. Push `dev` -> deploy `dev`
+3. Push `master` -> deploy `production`
+
+Smoke checks run in CI against the local stack.
 
 ## Tooling Conventions
 

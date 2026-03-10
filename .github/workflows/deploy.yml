@@ -172,22 +172,6 @@ jobs:
             COMPOSE_BUILD=0 ./scripts/up-prod.sh
           "
 
-  smoke-dev:
-    name: Smoke Test Dev
-    if: github.ref_name == 'dev'
-    runs-on: ubuntu-latest
-    environment: dev
-    needs: deploy-dev
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run smoke checks
-        env:
-          APP_URL: ${{ secrets.APP_URL }}
-          API_URL: ${{ secrets.API_URL }}
-        run: ./scripts/smoke-check.sh
-
   deploy-production:
     name: Deploy Production
     if: github.ref_name == 'master'
@@ -283,19 +267,3 @@ jobs:
             docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml pull backend frontend
             COMPOSE_BUILD=0 ./scripts/up-prod.sh
           "
-
-  smoke-production:
-    name: Smoke Test Production
-    if: github.ref_name == 'master'
-    runs-on: ubuntu-latest
-    environment: production
-    needs: deploy-production
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run smoke checks
-        env:
-          APP_URL: ${{ secrets.APP_URL }}
-          API_URL: ${{ secrets.API_URL }}
-        run: ./scripts/smoke-check.sh

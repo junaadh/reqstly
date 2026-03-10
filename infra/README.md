@@ -118,4 +118,4 @@ Canonical env definitions live in:
 - App business logic must only use `app.app_users` as identity root.
 - Do not bind business logic to provider-internal identity tables.
 - Keep same-site browser session path as default auth path.
-- Keep dev smoke checks green before promoting changes to production.
+- Keep CI smoke checks green before promoting changes to production.

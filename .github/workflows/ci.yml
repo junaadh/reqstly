@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, dev]
   push:
-    branches: [master]
+    branches: [master, dev]
   workflow_dispatch:
 
 concurrency:
@@ -130,3 +130,22 @@ jobs:
 
       - name: Frontend build
         run: bun run build
+
+  stack-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare CI env
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" FORCE=1 ROTATE_KEYS=1 ./scripts/setup-dev.sh
+
+      - name: Start local stack for smoke checks
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" COMPOSE_BUILD=1 ./scripts/up-dev.sh backend frontend caddy
+
+      - name: Run smoke checks
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" ./scripts/smoke-check.sh
+
+      - name: Teardown local stack
+        if: always()
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" docker compose --env-file "${GITHUB_WORKSPACE}/.env.ci" -f infra/docker-compose.dev.yml down -v --remove-orphans
