@@ -10,7 +10,10 @@ pub mod telemetry;
 use axum::{
     Router,
     extract::Request,
-    http::{HeaderValue, Method},
+    http::{
+        HeaderValue, Method,
+        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName},
+    },
     routing::get,
 };
 use axum_prometheus::PrometheusMetricLayer;
@@ -63,10 +66,13 @@ pub fn build_app(
                 Method::OPTIONS,
             ])
             .allow_headers(Any)
+            .allow_credentials(false)
     } else {
         let parsed: HeaderValue = allowed_origin.parse().map_err(|_| {
             error::AppError::Internal("invalid CORS origin".to_string())
         })?;
+        let x_request_id = HeaderName::from_static("x-request-id");
+        let x_csrf_token = HeaderName::from_static("x-csrf-token");
 
         CorsLayer::new()
             .allow_origin(parsed)
@@ -77,7 +83,14 @@ pub fn build_app(
                 Method::DELETE,
                 Method::OPTIONS,
             ])
-            .allow_headers(Any)
+            .allow_headers([
+                ACCEPT,
+                AUTHORIZATION,
+                CONTENT_TYPE,
+                x_request_id,
+                x_csrf_token,
+            ])
+            .allow_credentials(true)
     };
 
     Ok(Router::new()

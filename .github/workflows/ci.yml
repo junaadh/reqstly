@@ -72,6 +72,8 @@ jobs:
 
   backend-test:
     runs-on: ubuntu-latest
+    env:
+      BACKEND_MIN_COVERAGE: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v4

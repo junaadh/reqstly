@@ -118,6 +118,7 @@ jobs:
           FRONTEND_IMAGE_TAG: ${{ github.sha }}
           APP_DIR: /home/${{ secrets.DEPLOY_SSH_USER }}/reqstly-dev
         run: |
+          POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
           ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
             set -e
 
@@ -144,6 +145,7 @@ jobs:
               echo \"POSTGRES_DB=postgres\"
               echo \"POSTGRES_PORT=5432\"
               echo \"POSTGRES_PASSWORD=${POSTGRES_PASSWORD}\"
+              echo \"POSTGRES_PASSWORD_ENCODED=${POSTGRES_PASSWORD_ENCODED}\"
               echo \"AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}\"
               echo \"AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}\"
               echo \"AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}\"
@@ -213,6 +215,7 @@ jobs:
           FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
           FRONTEND_IMAGE_TAG: ${{ github.sha }}
         run: |
+          POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
           ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
             set -e
 
@@ -239,6 +242,7 @@ jobs:
               echo \"POSTGRES_DB=postgres\"
               echo \"POSTGRES_PORT=5432\"
               echo \"POSTGRES_PASSWORD=${POSTGRES_PASSWORD}\"
+              echo \"POSTGRES_PASSWORD_ENCODED=${POSTGRES_PASSWORD_ENCODED}\"
               echo \"AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}\"
               echo \"AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}\"
               echo \"AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}\"

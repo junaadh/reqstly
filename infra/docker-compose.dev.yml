@@ -39,7 +39,7 @@ services:
         sqlx migrate run --database-url \"$$DATABASE_URL\" --source /migrations
       "
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD_ENCODED:-${POSTGRES_PASSWORD}}@db:5432/${POSTGRES_DB:-postgres}
     depends_on:
       db:
         condition: service_healthy
@@ -58,7 +58,7 @@ services:
       retries: 10
       start_period: ${BACKEND_HEALTH_START_PERIOD:-120s}
     environment:
-      DATABASE__URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DATABASE__URL: postgres://postgres:${POSTGRES_PASSWORD_ENCODED:-${POSTGRES_PASSWORD}}@db:5432/${POSTGRES_DB:-postgres}
       SERVER__PORT: 3000
       SERVER__BASE_URL: ${API_URL:-https://api.localhost}
       CORS__ALLOWED_ORIGIN: ${APP_URL:-https://localhost}
@@ -154,7 +154,7 @@ services:
     container_name: postgres-exporter
     image: prometheuscommunity/postgres-exporter:v0.16.0
     environment:
-      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD_ENCODED:-${POSTGRES_PASSWORD}}@db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
     depends_on:
       db:
         condition: service_healthy

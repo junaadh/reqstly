@@ -63,6 +63,7 @@ Canonical env definitions live in:
 - `AUTH__WEBAUTHN_RP_ID`
 - `AUTH__WEBAUTHN_RP_ORIGIN`
 - `AUTH__WEBAUTHN_RP_NAME`
+- `POSTGRES_PASSWORD_ENCODED` (URL-encoded `POSTGRES_PASSWORD` for DSN envs)
 
 ### Caddy TLS runtime (production)
 

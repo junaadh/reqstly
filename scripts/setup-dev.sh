@@ -49,6 +49,32 @@ else
   echo "Skipping secret rotation (set ROTATE_KEYS=1 to rotate)."
 fi
 
+echo "Syncing URL-encoded Postgres password..."
+python3 - "${ENV_FILE}" <<'PY'
+import sys
+import urllib.parse
+from pathlib import Path
+
+env_path = Path(sys.argv[1]).resolve()
+lines = env_path.read_text(encoding="utf-8").splitlines()
+
+postgres_password = None
+output = []
+for line in lines:
+    if line.startswith("POSTGRES_PASSWORD="):
+        postgres_password = line.split("=", 1)[1]
+    if not line.startswith("POSTGRES_PASSWORD_ENCODED="):
+        output.append(line)
+
+if postgres_password is None:
+    raise SystemExit("POSTGRES_PASSWORD missing from env file")
+
+output.append(
+    f"POSTGRES_PASSWORD_ENCODED={urllib.parse.quote(postgres_password, safe='')}"
+)
+env_path.write_text("\n".join(output) + "\n", encoding="utf-8")
+PY
+
 echo "Generating local TLS certificates for Caddy..."
 "${ROOT_DIR}/scripts/generate-dev-certs.sh"
 

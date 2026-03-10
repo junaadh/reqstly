@@ -12,8 +12,8 @@ fi
 
 python3 - "${ENV_FILE}" <<'PY'
 import secrets
-import re
 import sys
+import urllib.parse
 from pathlib import Path
 
 
@@ -38,8 +38,11 @@ def upsert(lines: list[str], key: str, value: str) -> list[str]:
 env_path = Path(sys.argv[1]).resolve()
 lines = env_path.read_text(encoding="utf-8").splitlines()
 
+postgres_password = secrets.token_urlsafe(24)
+
 generated = {
-    "POSTGRES_PASSWORD": secrets.token_urlsafe(24),
+    "POSTGRES_PASSWORD": postgres_password,
+    "POSTGRES_PASSWORD_ENCODED": urllib.parse.quote(postgres_password, safe=""),
     "AUTH__WS_TOKEN_SECRET": secrets.token_urlsafe(48),
     "GRAFANA_ADMIN_PASSWORD": secrets.token_urlsafe(20),
 }
