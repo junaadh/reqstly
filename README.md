@@ -122,6 +122,8 @@ Use `.env` production values, then:
 
 - place Cloudflare origin cert/key on the host under `~/certs/reqstly.pem` and `~/certs/reqstly.key`
 - keep permissions locked down (`chmod 600`)
+- ensure cert SANs cover both `APP_DOMAIN` and `API_DOMAIN` used by the target environment
+  - for dev subdomains, `*.reqstly.com` does not cover `api.dev.reqstly.com`; include `api.dev.reqstly.com` or `*.dev.reqstly.com`
 
 ```bash
 ./scripts/up-prod.sh

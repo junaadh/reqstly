@@ -70,6 +70,7 @@ Canonical env definitions live in:
 - `CADDY_TLS_CERT_DIR` (host path mounted into caddy as `/certs`)
 - `CADDY_TLS_CERT_FILE` (container path, default `/certs/reqstly.pem`)
 - `CADDY_TLS_KEY_FILE` (container path, default `/certs/reqstly.key`)
+- `APP_DOMAIN` and `API_DOMAIN` are passed into the caddy container and used by Caddyfile env placeholders.
 
 ### Logging/telemetry
 
@@ -120,3 +121,18 @@ Canonical env definitions live in:
 - Do not bind business logic to provider-internal identity tables.
 - Keep same-site browser session path as default auth path.
 - Keep CI smoke checks green before promoting changes to production.
+- Keep `/ws` routed to backend on app domains (do not proxy websocket path to frontend).
+
+## TLS and Domains (Cloudflare)
+
+- If Cloudflare SSL mode is `Full (strict)`, origin cert SANs must cover both app and API hostnames.
+- `*.reqstly.com` covers `dev.reqstly.com` but does not cover `api.dev.reqstly.com`.
+- For dev subdomains, include either:
+  - explicit `api.dev.reqstly.com`, or
+  - wildcard `*.dev.reqstly.com`.
+- If cert/key files are updated on host, recreate caddy to reload files/config:
+
+```bash
+cd ~/reqstly-dev
+docker compose --env-file .env -f infra/docker-compose.yml up -d --force-recreate caddy
+```
