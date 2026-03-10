@@ -136,6 +136,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./proxy/caddy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - ${CADDY_TLS_CERT_DIR:-/home/deploy/certs}:/certs:ro
       - caddy-data:/data
       - caddy-config:/config
 

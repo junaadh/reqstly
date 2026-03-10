@@ -3,6 +3,7 @@
 }
 
 https://{$API_DOMAIN:api.reqstly.com} {
+	tls {$CADDY_TLS_CERT_FILE:/certs/reqstly.pem} {$CADDY_TLS_KEY_FILE:/certs/reqstly.key}
 	reverse_proxy backend:3000
 
 	log {
@@ -12,6 +13,7 @@ https://{$API_DOMAIN:api.reqstly.com} {
 }
 
 https://{$APP_DOMAIN:reqstly.com} {
+	tls {$CADDY_TLS_CERT_FILE:/certs/reqstly.pem} {$CADDY_TLS_KEY_FILE:/certs/reqstly.key}
 	handle /health {
 		header {
 			X-Service "caddy"

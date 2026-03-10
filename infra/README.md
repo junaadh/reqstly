@@ -64,6 +64,12 @@ Canonical env definitions live in:
 - `AUTH__WEBAUTHN_RP_ORIGIN`
 - `AUTH__WEBAUTHN_RP_NAME`
 
+### Caddy TLS runtime (production)
+
+- `CADDY_TLS_CERT_DIR` (host path mounted into caddy as `/certs`)
+- `CADDY_TLS_CERT_FILE` (container path, default `/certs/reqstly.pem`)
+- `CADDY_TLS_KEY_FILE` (container path, default `/certs/reqstly.key`)
+
 ### Logging/telemetry
 
 - `LOGGING__LEVEL`
@@ -112,4 +118,4 @@ Canonical env definitions live in:
 - App business logic must only use `app.app_users` as identity root.
 - Do not bind business logic to provider-internal identity tables.
 - Keep same-site browser session path as default auth path.
-- Keep staging smoke checks mandatory before production promotion.
+- Keep dev smoke checks green before promoting changes to production.

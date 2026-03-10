@@ -120,18 +120,20 @@ bun run build
 
 Use `.env` production values, then:
 
+- place Cloudflare origin cert/key on the host under `~/certs/reqstly.pem` and `~/certs/reqstly.key`
+- keep permissions locked down (`chmod 600`)
+
 ```bash
 ./scripts/up-prod.sh
 ```
 
 ## CI/CD
 
-Deployment remains staging-first and mandatory:
+Deployment targets are branch-based:
 
 1. Build/test
-2. Deploy staging
-3. Run staging smoke checks
-4. Deploy production
+2. Push `dev` -> deploy + smoke `dev`
+3. Push `master` -> deploy + smoke `production`
 
 ## Tooling Conventions
 
