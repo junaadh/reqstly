@@ -1,51 +1,8 @@
-# # Development Caddyfile for Reqstly
+{
+	email {$CADDY_ACME_EMAIL:ops@reqstly.com}
+}
 
-# https://api.localhost {
-#     reverse_proxy backend:3000
-
-#     log {
-#         output file /dev/stdout
-#         format console
-#     }
-# }
-
-# https://localhost {
-#     # Health check endpoint for Caddy
-#     handle /health {
-#         header {
-#             X-Service "caddy"
-#             Content-Type application/json
-#         }
-#         respond `{"status":"ok","service":"caddy"}` 200
-#     }
-
-#     # Grafana dashboards
-#     handle_path /grafana* {
-#         reverse_proxy grafana:3000
-#     }
-
-#     # Backend metrics endpoint (for Prometheus)
-#     handle /metrics* {
-#         reverse_proxy backend:3000
-#     }
-
-#     # Frontend application (catch-all)
-#     handle {
-#         reverse_proxy frontend:5173
-#     }
-
-#     # Log to stdout for Docker log collection
-#     log {
-#         output file /dev/stdout
-#         format console
-#     }
-# }
-# Production Caddyfile for Reqstly
-
-# Backend API
-https://api.reqstly.com {
-	tls /etc/caddy/certs/reqstly.pem /etc/caddy/certs/reqstly.key
-
+https://{$API_DOMAIN:api.reqstly.com} {
 	reverse_proxy backend:3000
 
 	log {
@@ -54,11 +11,7 @@ https://api.reqstly.com {
 	}
 }
 
-# Main frontend + observability endpoints
-https://reqstly.com {
-	tls /etc/caddy/certs/reqstly.pem /etc/caddy/certs/reqstly.key
-
-	# Health check endpoint
+https://{$APP_DOMAIN:reqstly.com} {
 	handle /health {
 		header {
 			X-Service "caddy"
@@ -67,22 +20,10 @@ https://reqstly.com {
 		respond `{"status":"ok","service":"caddy"}` 200
 	}
 
-	# Grafana dashboards
-	handle_path /grafana* {
-		reverse_proxy grafana:3000
-	}
-
-	# Prometheus metrics
-	handle /metrics* {
-		reverse_proxy backend:3000
-	}
-
-	# Catch-all for frontend
 	handle {
-		reverse_proxy frontend:5173
+		reverse_proxy frontend:3000
 	}
 
-	# Log to stdout for Docker log collection
 	log {
 		output file /dev/stdout
 		format console

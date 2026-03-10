@@ -1,71 +1,272 @@
-name: Deploy to VPS
+name: Deploy
 
 on:
   push:
-    branches:
-      - master
+    branches: [master, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  deploy:
+  build-backend-image:
+    name: Build Backend Image
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Checkout the repo
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Setup SSH agent with deploy key
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          target: runtime
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository }}-backend:main
+          cache-from: type=gha,scope=reqstly-backend
+          cache-to: type=gha,mode=max,scope=reqstly-backend
+
+  build-frontend-image:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          target: runtime
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository }}-frontend:main
+          cache-from: type=gha,scope=reqstly-frontend
+          cache-to: type=gha,mode=max,scope=reqstly-frontend
+
+  deploy-dev:
+    name: Deploy Dev
+    if: github.ref_name == 'dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    needs: [build-backend-image, build-frontend-image]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.HETZNER_SSH_KEY }}
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      # 3. SSH into VPS and deploy
-      - name: Deploy to VPS
+      - name: Deploy stack to dev VPS
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          APP_DOMAIN: ${{ secrets.APP_DOMAIN }}
+          API_DOMAIN: ${{ secrets.API_DOMAIN }}
+          APP_URL: ${{ secrets.APP_URL }}
+          API_URL: ${{ secrets.API_URL }}
+          CADDY_ACME_EMAIL: ${{ secrets.CADDY_ACME_EMAIL }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          AZURE_AD_CLIENT_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
-          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
-          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
-          RP_ID: ${{ secrets.RP_ID }}
-          ORIGIN: ${{ secrets.ORIGIN }}
-          SERVER_BASE_URL: ${{ secrets.SERVER_BASE_URL }}
+          AUTH_WS_TOKEN_SECRET: ${{ secrets.AUTH_WS_TOKEN_SECRET }}
+          AUTH_WS_TOKEN_ISSUER: ${{ secrets.AUTH_WS_TOKEN_ISSUER }}
+          AUTH_WEBAUTHN_RP_ID: ${{ secrets.AUTH_WEBAUTHN_RP_ID }}
+          AUTH_WEBAUTHN_RP_ORIGIN: ${{ secrets.AUTH_WEBAUTHN_RP_ORIGIN }}
+          AUTH_WEBAUTHN_RP_NAME: ${{ secrets.AUTH_WEBAUTHN_RP_NAME }}
+          AUTH_SESSION_COOKIE_NAME: ${{ secrets.AUTH_SESSION_COOKIE_NAME }}
+          AUTH_SESSION_IDLE_MINUTES: ${{ secrets.AUTH_SESSION_IDLE_MINUTES }}
+          AUTH_SESSION_SECURE: ${{ secrets.AUTH_SESSION_SECURE }}
           GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          LOGGING_LEVEL: ${{ secrets.LOGGING_LEVEL }}
+          BACKEND_IMAGE: ghcr.io/${{ github.repository }}-backend
+          BACKEND_IMAGE_TAG: ${{ github.sha }}
+          FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
+          FRONTEND_IMAGE_TAG: ${{ github.sha }}
+          APP_DIR: /home/${{ secrets.DEPLOY_SSH_USER }}/reqstly-dev
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.HETZNER_SSH_USER }}@${{ secrets.HETZNER_SSH_HOST }} "
+          POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
+          ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
             set -e
 
-            # clone repo if missing
-            if [ ! -d ~/reqstly ]; then
-              git clone https://github.com/junaadh/reqstly.git ~/reqstly
+            if [ ! -d ${APP_DIR} ]; then
+              git clone https://github.com/junaadh/reqstly.git ${APP_DIR}
             fi
 
-            cd ~/reqstly
+            cd ${APP_DIR}
             git fetch --all
-            git reset --hard origin/master
+            git reset --hard ${{ github.sha }}
 
-            # write environment variables for docker-compose
-            echo \"POSTGRES_USER=$POSTGRES_USER\" > .env
-            echo \"POSTGRES_PASSWORD=$POSTGRES_PASSWORD\" >> .env
-            echo \"POSTGRES_DB=$POSTGRES_DB\" >> .env
-            echo \"JWT_SECRET=$JWT_SECRET\" >> .env
-            echo \"AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID\" >> .env
-            echo \"AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID\" >> .env
-            echo \"AZURE_AD_CLIENT_SECRET=$AZURE_AD_CLIENT_SECRET\" >> .env
-            echo \"RP_ID=$RP_ID\" >> .env
-            echo \"ORIGIN=$ORIGIN\" >> .env
-            echo \"SERVER_BASE_URL=$SERVER_BASE_URL\" >> .env
-            echo \"GRAFANA_ADMIN_USER=$GRAFANA_ADMIN_USER\" >> .env
-            echo \"GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD\" >> .env
+            {
+              echo \"APP_DOMAIN=${APP_DOMAIN}\"
+              echo \"API_DOMAIN=${API_DOMAIN}\"
+              echo \"APP_URL=${APP_URL}\"
+              echo \"API_URL=${API_URL}\"
+              echo \"PRIVATE_API_BASE_URL=http://backend:3000\"
+              echo \"CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}\"
+              echo \"CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs\"
+              echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
+              echo \"CADDY_TLS_KEY_FILE=/certs/reqstly.key\"
+              echo \"COMPOSE_PROJECT_NAME=reqstly\"
+              echo \"POSTGRES_HOST=db\"
+              echo \"POSTGRES_DB=postgres\"
+              echo \"POSTGRES_PORT=5432\"
+              echo \"POSTGRES_PASSWORD=${POSTGRES_PASSWORD}\"
+              echo \"POSTGRES_PASSWORD_ENCODED=${POSTGRES_PASSWORD_ENCODED}\"
+              echo \"AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}\"
+              echo \"AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}\"
+              echo \"AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}\"
+              echo \"AUTH__SESSION_IDLE_MINUTES=${AUTH_SESSION_IDLE_MINUTES}\"
+              echo \"AUTH__SESSION_SECURE=${AUTH_SESSION_SECURE}\"
+              echo \"AUTH__WEBAUTHN_RP_ID=${AUTH_WEBAUTHN_RP_ID}\"
+              echo \"AUTH__WEBAUTHN_RP_ORIGIN=${AUTH_WEBAUTHN_RP_ORIGIN}\"
+              echo \"AUTH__WEBAUTHN_RP_NAME=${AUTH_WEBAUTHN_RP_NAME}\"
+              echo \"SERVER__BASE_URL=${API_URL}\"
+              echo \"CORS__ALLOWED_ORIGIN=${APP_URL}\"
+              echo \"LOGGING__LEVEL=${LOGGING_LEVEL}\"
+              echo \"LOGGING__FORMAT=json\"
+              echo \"LOGGING__SERVICE_NAME=reqstly-backend\"
+              echo \"LOGGING__ENVIRONMENT=dev\"
+              echo \"PUBLIC_API_BASE_URL=${API_URL}\"
+              echo \"ORIGIN=${APP_URL}\"
+              echo \"GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}\"
+              echo \"GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}\"
+              echo \"BACKEND_IMAGE=${BACKEND_IMAGE}\"
+              echo \"BACKEND_IMAGE_TAG=${BACKEND_IMAGE_TAG}\"
+              echo \"FRONTEND_IMAGE=${FRONTEND_IMAGE}\"
+              echo \"FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}\"
+            } > .env
 
-            # Pull, build, and start the stack
-            docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml pull
-            docker compose --env-file ~/reqstly/.env -f infra/docker-compose.yml up -d --build --remove-orphans
+            docker compose --env-file ${APP_DIR}/.env -f infra/docker-compose.yml pull backend frontend
+            COMPOSE_BUILD=0 ./scripts/up-prod.sh
+          "
 
-            # Optional: prune unused images to save disk space
-            docker system prune -f
+  deploy-production:
+    name: Deploy Production
+    if: github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [build-backend-image, build-frontend-image]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Deploy stack to production VPS
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          APP_DOMAIN: ${{ secrets.APP_DOMAIN }}
+          API_DOMAIN: ${{ secrets.API_DOMAIN }}
+          APP_URL: ${{ secrets.APP_URL }}
+          API_URL: ${{ secrets.API_URL }}
+          CADDY_ACME_EMAIL: ${{ secrets.CADDY_ACME_EMAIL }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          AUTH_WS_TOKEN_SECRET: ${{ secrets.AUTH_WS_TOKEN_SECRET }}
+          AUTH_WS_TOKEN_ISSUER: ${{ secrets.AUTH_WS_TOKEN_ISSUER }}
+          AUTH_WEBAUTHN_RP_ID: ${{ secrets.AUTH_WEBAUTHN_RP_ID }}
+          AUTH_WEBAUTHN_RP_ORIGIN: ${{ secrets.AUTH_WEBAUTHN_RP_ORIGIN }}
+          AUTH_WEBAUTHN_RP_NAME: ${{ secrets.AUTH_WEBAUTHN_RP_NAME }}
+          AUTH_SESSION_COOKIE_NAME: ${{ secrets.AUTH_SESSION_COOKIE_NAME }}
+          AUTH_SESSION_IDLE_MINUTES: ${{ secrets.AUTH_SESSION_IDLE_MINUTES }}
+          AUTH_SESSION_SECURE: ${{ secrets.AUTH_SESSION_SECURE }}
+          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          LOGGING_LEVEL: ${{ secrets.LOGGING_LEVEL }}
+          BACKEND_IMAGE: ghcr.io/${{ github.repository }}-backend
+          BACKEND_IMAGE_TAG: ${{ github.sha }}
+          FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
+          FRONTEND_IMAGE_TAG: ${{ github.sha }}
+        run: |
+          POSTGRES_PASSWORD_ENCODED="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
+          ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
+            set -e
+
+            if [ ! -d /home/${DEPLOY_USER}/reqstly ]; then
+              git clone https://github.com/junaadh/reqstly.git /home/${DEPLOY_USER}/reqstly
+            fi
+
+            cd /home/${DEPLOY_USER}/reqstly
+            git fetch --all
+            git reset --hard ${{ github.sha }}
+
+            {
+              echo \"APP_DOMAIN=${APP_DOMAIN}\"
+              echo \"API_DOMAIN=${API_DOMAIN}\"
+              echo \"APP_URL=${APP_URL}\"
+              echo \"API_URL=${API_URL}\"
+              echo \"PRIVATE_API_BASE_URL=http://backend:3000\"
+              echo \"CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}\"
+              echo \"CADDY_TLS_CERT_DIR=/home/${DEPLOY_USER}/certs\"
+              echo \"CADDY_TLS_CERT_FILE=/certs/reqstly.pem\"
+              echo \"CADDY_TLS_KEY_FILE=/certs/reqstly.key\"
+              echo \"COMPOSE_PROJECT_NAME=reqstly\"
+              echo \"POSTGRES_HOST=db\"
+              echo \"POSTGRES_DB=postgres\"
+              echo \"POSTGRES_PORT=5432\"
+              echo \"POSTGRES_PASSWORD=${POSTGRES_PASSWORD}\"
+              echo \"POSTGRES_PASSWORD_ENCODED=${POSTGRES_PASSWORD_ENCODED}\"
+              echo \"AUTH__WS_TOKEN_SECRET=${AUTH_WS_TOKEN_SECRET}\"
+              echo \"AUTH__WS_TOKEN_ISSUER=${AUTH_WS_TOKEN_ISSUER}\"
+              echo \"AUTH__SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME}\"
+              echo \"AUTH__SESSION_IDLE_MINUTES=${AUTH_SESSION_IDLE_MINUTES}\"
+              echo \"AUTH__SESSION_SECURE=${AUTH_SESSION_SECURE}\"
+              echo \"AUTH__WEBAUTHN_RP_ID=${AUTH_WEBAUTHN_RP_ID}\"
+              echo \"AUTH__WEBAUTHN_RP_ORIGIN=${AUTH_WEBAUTHN_RP_ORIGIN}\"
+              echo \"AUTH__WEBAUTHN_RP_NAME=${AUTH_WEBAUTHN_RP_NAME}\"
+              echo \"SERVER__BASE_URL=${API_URL}\"
+              echo \"CORS__ALLOWED_ORIGIN=${APP_URL}\"
+              echo \"LOGGING__LEVEL=${LOGGING_LEVEL}\"
+              echo \"LOGGING__FORMAT=json\"
+              echo \"LOGGING__SERVICE_NAME=reqstly-backend\"
+              echo \"LOGGING__ENVIRONMENT=production\"
+              echo \"PUBLIC_API_BASE_URL=${API_URL}\"
+              echo \"ORIGIN=${APP_URL}\"
+              echo \"GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}\"
+              echo \"GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}\"
+              echo \"BACKEND_IMAGE=${BACKEND_IMAGE}\"
+              echo \"BACKEND_IMAGE_TAG=${BACKEND_IMAGE_TAG}\"
+              echo \"FRONTEND_IMAGE=${FRONTEND_IMAGE}\"
+              echo \"FRONTEND_IMAGE_TAG=${FRONTEND_IMAGE_TAG}\"
+            } > .env
+
+            docker compose --env-file /home/${DEPLOY_USER}/reqstly/.env -f infra/docker-compose.yml pull backend frontend
+            COMPOSE_BUILD=0 ./scripts/up-prod.sh
           "

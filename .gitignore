@@ -26,6 +26,10 @@ frontend/core/
 # Docker
 *.log
 docker-compose.override.yml
+infra/proxy/caddy/certs/dev/*
+!infra/proxy/caddy/certs/dev/.gitkeep
+reqstly.pem
+reqstly.key
 
 # Database
 *.db

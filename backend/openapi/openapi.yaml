@@ -1,0 +1,1377 @@
+openapi: 3.0.3
+info:
+  title: Reqstly Backend API
+  version: 0.2.0
+servers:
+  - url: https://api.reqstly.com
+  - url: https://api.localhost
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Meta:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+      required: [request_id]
+
+    ListMeta:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total_pages:
+          type: integer
+          minimum: 0
+      required: [request_id, total, page, limit, total_pages]
+
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+      required: [field, message]
+
+    ErrorPayload:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - UNAUTHORIZED
+            - RATE_LIMITED
+            - NOT_FOUND
+            - VALIDATION_ERROR
+            - DATABASE_ERROR
+            - MIGRATION_ERROR
+            - INTERNAL_ERROR
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      required: [code, message]
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [error, meta]
+
+    HealthPayload:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+        version:
+          type: string
+      required: [status, service, version]
+
+    MePayload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+      required: [id, email, display_name]
+
+    EnumPayload:
+      type: object
+      properties:
+        status:
+          type: array
+          items:
+            type: string
+            enum: [open, in_progress, resolved]
+        category:
+          type: array
+          items:
+            type: string
+            enum: [IT, Ops, Admin, HR]
+        priority:
+          type: array
+          items:
+            type: string
+            enum: [low, medium, high]
+      required: [status, category, priority]
+
+    Request:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+          enum: [IT, Ops, Admin, HR]
+        status:
+          type: string
+          enum: [open, in_progress, resolved]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        assignee_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        assignee_email:
+          type: string
+          format: email
+          nullable: true
+        assignee_display_name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - owner_user_id
+        - title
+        - category
+        - status
+        - priority
+        - created_at
+        - updated_at
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        actor_user_id:
+          type: string
+          format: uuid
+        actor_email:
+          type: string
+          format: email
+        action:
+          type: string
+          enum: [created, updated, deleted, status_changed]
+        old_value:
+          type: object
+        new_value:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - request_id
+        - actor_user_id
+        - actor_email
+        - action
+        - old_value
+        - new_value
+        - created_at
+
+    CreateRequestInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 5000
+        assignee_email:
+          type: string
+          format: email
+          nullable: true
+        category:
+          type: string
+          enum: [IT, Ops, Admin, HR]
+        priority:
+          type: string
+          enum: [low, medium, high]
+      required: [title, category, priority]
+
+    AssigneeSuggestion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        assignment_count:
+          type: integer
+          minimum: 0
+      required: [id, email, display_name, assignment_count]
+
+    UpdateRequestInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          maxLength: 5000
+        category:
+          type: string
+          enum: [IT, Ops, Admin, HR]
+        status:
+          type: string
+          enum: [open, in_progress, resolved]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        assignee_email:
+          type: string
+          format: email
+          nullable: true
+
+    UpdateMeInput:
+      type: object
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required: [display_name]
+
+    PreferencesPayload:
+      type: object
+      properties:
+        email_digest:
+          type: boolean
+        browser_alerts:
+          type: boolean
+        default_page_size:
+          type: integer
+          enum: [10, 20, 50, 100]
+      required: [email_digest, browser_alerts, default_page_size]
+
+    UpdatePreferencesInput:
+      type: object
+      properties:
+        email_digest:
+          type: boolean
+        browser_alerts:
+          type: boolean
+        default_page_size:
+          type: integer
+          enum: [10, 20, 50, 100]
+
+    AuthUserPayload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        is_active:
+          type: boolean
+        email_verified:
+          type: boolean
+      required: [id, email, display_name, is_active, email_verified]
+
+    SignupInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+        display_name:
+          type: string
+          nullable: true
+          maxLength: 120
+      required: [email, password]
+
+    PasswordLoginInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+
+    OkPayload:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+      required: [ok]
+
+    CsrfTokenPayload:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required: [token, expires_at]
+
+    WsTokenPayload:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required: [token, expires_at]
+
+    PasskeyCredentialSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        first_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, created_at]
+
+    PasskeyStats:
+      type: object
+      properties:
+        passkey_count:
+          type: integer
+          minimum: 0
+        first_registered_at:
+          type: string
+          format: date-time
+          nullable: true
+        first_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [passkey_count]
+
+    PasskeyListPayload:
+      type: object
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/PasskeyCredentialSummary'
+        stats:
+          $ref: '#/components/schemas/PasskeyStats'
+      required: [credentials, stats]
+
+    PasskeyChallengePayload:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        options:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, options]
+
+    PasskeyRegisterStartInput:
+      type: object
+      properties:
+        nickname:
+          type: string
+          nullable: true
+          maxLength: 120
+
+    PasskeyRegisterFinishInput:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        credential:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, credential]
+
+    PasskeySignupStartInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+          nullable: true
+          maxLength: 120
+        nickname:
+          type: string
+          nullable: true
+          maxLength: 120
+      required: [email]
+
+    PasskeySignupFinishInput:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        credential:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, credential]
+
+    PasskeyLoginStartInput:
+      type: object
+      additionalProperties: false
+
+    PasskeyLoginFinishInput:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        credential:
+          type: object
+          additionalProperties: true
+      required: [challenge_id, credential]
+
+    HealthResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/HealthPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    MeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/MePayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    PreferencesResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PreferencesPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    EnumsResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/EnumPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    RequestResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Request'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    RequestListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Request'
+        meta:
+          $ref: '#/components/schemas/ListMeta'
+      required: [data, meta]
+
+    AuditListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    AssigneeSuggestionsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssigneeSuggestion'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    AuthUserResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthUserPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    OkResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/OkPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    CsrfTokenResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CsrfTokenPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    WsTokenResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/WsTokenPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    PasskeyListResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PasskeyListPayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+    PasskeyChallengeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PasskeyChallengePayload'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data, meta]
+
+paths:
+  /health:
+    get:
+      summary: Infra/API process health check
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/health:
+    get:
+      summary: Versioned API health check
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/auth/signup:
+    post:
+      summary: Sign up with email/password and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupInput'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/login/password:
+    post:
+      summary: Login with email/password and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordLoginInput'
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/csrf:
+    get:
+      summary: Issue CSRF token for authenticated session
+      responses:
+        '200':
+          description: CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfTokenResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/logout:
+    post:
+      summary: Logout current session
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/sessions/revoke:
+    post:
+      summary: Revoke all sessions and ws tokens for current user
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      responses:
+        '200':
+          description: Sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/ws-token:
+    post:
+      summary: Mint short-lived ws bearer token
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      responses:
+        '200':
+          description: Token minted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WsTokenResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys:
+    get:
+      summary: List authenticated user's active passkeys and stats
+      responses:
+        '200':
+          description: Passkey list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/register/start:
+    post:
+      summary: Start passkey enrollment for authenticated user
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyRegisterStartInput'
+      responses:
+        '200':
+          description: Registration challenge generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallengeResponse'
+        '401':
+          description: Unauthorized or missing/invalid CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/register/finish:
+    post:
+      summary: Finish passkey enrollment for authenticated user
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: false
+          schema:
+            type: string
+          description: Required for session-cookie authenticated browser requests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyRegisterFinishInput'
+      responses:
+        '200':
+          description: Passkey enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Unauthorized or invalid/expired challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/signup/start:
+    post:
+      summary: Start passwordless passkey signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeySignupStartInput'
+      responses:
+        '200':
+          description: Passkey signup challenge generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallengeResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/signup/finish:
+    post:
+      summary: Finish passwordless passkey signup and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeySignupFinishInput'
+      responses:
+        '201':
+          description: Passkey account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Invalid/expired challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/login/start:
+    post:
+      summary: Start passkey login challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyLoginStartInput'
+      responses:
+        '200':
+          description: Login challenge generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallengeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/auth/passkeys/login/finish:
+    post:
+      summary: Finish passkey login and establish session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyLoginFinishInput'
+      responses:
+        '200':
+          description: Logged in with passkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserResponse'
+        '401':
+          description: Unauthorized or invalid/expired challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/me:
+    get:
+      summary: Current authenticated user profile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      summary: Update current authenticated user profile metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeInput'
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/preferences:
+    get:
+      summary: Get current authenticated user preferences
+      responses:
+        '200':
+          description: User preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      summary: Update current authenticated user preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePreferencesInput'
+      responses:
+        '200':
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/meta/enums:
+    get:
+      summary: Supported enum values for request fields
+      security: []
+      responses:
+        '200':
+          description: Enum values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnumsResponse'
+
+  /api/v1/assignees/suggestions:
+    get:
+      summary: Suggest assignees from current user's email domain
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Optional search term for email or display name.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Same-domain assignee suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssigneeSuggestionsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/requests:
+    get:
+      summary: List requests where current user is a participant
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, in_progress, resolved]
+        - in: query
+          name: category
+          schema:
+            type: string
+            enum: [IT, Ops, Admin, HR]
+        - in: query
+          name: priority
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Optional tokenized search across request text fields and assignee identity.
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [created_at, updated_at, -updated_at]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Request list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    post:
+      summary: Create a request for current user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequestInput'
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/requests/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a single visible request
+      responses:
+        '200':
+          description: Request found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    patch:
+      summary: Update request when current user is owner or current assignee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRequestInput'
+      responses:
+        '200':
+          description: Request updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    delete:
+      summary: Delete an owned request
+      responses:
+        '204':
+          description: Request deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/v1/requests/{id}/audit:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get audit log for a visible request
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'

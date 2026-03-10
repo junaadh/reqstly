@@ -1,262 +1,138 @@
-# Reqstly Infrastructure
+# Reqstly Infrastructure (Phase 5 Baseline)
 
-This directory contains all infrastructure configuration for running Reqstly locally using Docker Compose.
+## Target Direction
 
-## Directory Structure
+Infrastructure baseline is:
 
-```
-infra/
-├── proxy/
-│   └── caddy/              # Reverse proxy configuration (Caddyfile - Phase 5)
-│
-├── observability/
-│   ├── grafana/            # Dashboards and visualization
-│   │   └── provisioning/   # Auto-provisioned datasources and dashboards
-│   ├── prometheus/         # Metrics collection
-│   │   └── prometheus.yml  # Scrape configurations
-│   ├── loki/               # Log aggregation
-│   │   └── loki.yml        # Log retention and storage
-│   └── promtail/           # Log shipping agent
-│       └── promtail.yml    # Docker log scraping
-│
-├── docker-compose.yml      # Main orchestration file
-└── README.md               # This file
-```
+- Reqstly backend + frontend
+- PostgreSQL for app data and session store
+- Embedded backend auth (no authentik in baseline runtime)
+- Caddy reverse proxy
+- Redis
+- Observability stack (`infra/observability/`)
 
-## Services
+Supabase infrastructure artifacts are no longer part of active runtime.
 
-### Application Services
+Entra/OIDC runtime is deferred to Phase D.
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **Backend** | 3000 | Rust API server (Axum) |
-| **Frontend** | 5173 | Vite + TypeScript + React dev server |
-| **PostgreSQL** | 5432 | Database (PostgreSQL 16) |
+## Compose Model
 
-### Observability Services
+Use existing script entrypoints for orchestration:
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **Prometheus** | 9090 | Metrics collection and storage |
-| **Grafana** | 3001 | Dashboards and visualization |
-| **Loki** | 3100 | Log aggregation (9080 for gRPC) |
-| **Promtail** | - | Log shipper (no exposed port) |
+- `./scripts/setup-dev.sh`
+- `./scripts/up-dev.sh`
+- `./scripts/reset-dev-db.sh`
+- `./scripts/smoke-check.sh`
+- `./scripts/up-prod.sh`
 
-### Proxy Services (Phase 5)
+Direct `docker compose` is for debugging/teardown only.
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **Caddy** | 80, 443 | Reverse proxy with auto-TLS |
+## Services (Baseline)
 
-## Networks
+- `backend`
+- `frontend`
+- `db` (Postgres)
+- `migrate` (one-shot SQLx migrations container)
+- `caddy`
+- `redis`
+- `prometheus`
+- `loki`
+- `promtail`
+- `grafana`
+- `postgres-exporter`
+- `redis-exporter`
 
-Docker Compose creates three isolated networks:
+## Environment Variables
 
-- **reqstly-public** - Frontend and backend (external access)
-- **reqstly-internal** - Backend and database (isolated)
-- **reqstly-monitoring** - Monitoring stack (isolated)
+Canonical env definitions live in:
 
-## Quick Start
+- `.env.example`
+- `.env.local.example`
 
-### Prerequisites
+### Backend/auth runtime
 
-- Docker and Docker Compose installed
-- `.env.local` file configured in project root
+- `DATABASE__URL`
+- `SERVER__PORT`
+- `SERVER__BASE_URL`
+- `CORS__ALLOWED_ORIGIN`
+- `AUTH__WS_TOKEN_SECRET`
+- `AUTH__WS_TOKEN_ISSUER`
+- `AUTH__SESSION_COOKIE_NAME`
+- `AUTH__SESSION_IDLE_MINUTES`
+- `AUTH__SESSION_SECURE`
+- `AUTH__WEBAUTHN_RP_ID`
+- `AUTH__WEBAUTHN_RP_ORIGIN`
+- `AUTH__WEBAUTHN_RP_NAME`
+- `POSTGRES_PASSWORD_ENCODED` (URL-encoded `POSTGRES_PASSWORD` for DSN envs)
 
-### Start All Services
+### Caddy TLS runtime (production)
 
-```bash
-# From project root
-docker-compose -f infra/docker-compose.yml up -d
-```
+- `CADDY_TLS_CERT_DIR` (host path mounted into caddy as `/certs`)
+- `CADDY_TLS_CERT_FILE` (container path, default `/certs/reqstly.pem`)
+- `CADDY_TLS_KEY_FILE` (container path, default `/certs/reqstly.key`)
+- `APP_DOMAIN` and `API_DOMAIN` are passed into the caddy container and used by Caddyfile env placeholders.
 
-### View Logs
+### Logging/telemetry
 
-```bash
-# All services
-docker-compose -f infra/docker-compose.yml logs -f
+- `LOGGING__LEVEL`
+- `LOGGING__FORMAT`
+- `LOGGING__SERVICE_NAME`
+- `LOGGING__ENVIRONMENT`
 
-# Specific service
-docker-compose -f infra/docker-compose.yml logs -f backend
-```
+### Observability
 
-### Stop Services
+- `PROMETHEUS_PORT`
+- `LOKI_PORT`
+- `GRAFANA_PORT`
+- `GRAFANA_ADMIN_USER`
+- `GRAFANA_ADMIN_PASSWORD`
 
-```bash
-docker-compose -f infra/docker-compose.yml down
-```
+## Local Flow
 
-### Stop and Remove Volumes
-
-⚠️ **Warning**: This deletes all data
-
-```bash
-docker-compose -f infra/docker-compose.yml down -v
-```
-
-## Access Points
-
-Once services are running:
-
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:3000
-- **Backend Health**: http://localhost:3000/health
-- **Backend Metrics**: http://localhost:3000/metrics
-- **Grafana**: http://localhost:3001 (admin/admin)
-- **Prometheus**: http://localhost:9090
-
-## Configuration
-
-### Environment Variables
-
-Copy the example environment file:
+1. Bootstrap local env and certs:
 
 ```bash
-cp .env.example .env.local
+./scripts/setup-dev.sh
 ```
 
-Edit `.env.local` to configure:
-- Database credentials
-- JWT secrets
-- Azure AD credentials (Phase 3)
-- Passkey/WebAuthn settings (Phase 3)
-
-### Prometheus Configuration
-
-Edit `observability/prometheus/prometheus.yml` to:
-- Add scrape targets
-- Adjust retention period
-- Configure alerting rules
-
-### Grafana Dashboards
-
-Add custom dashboards to:
-```
-observability/grafana/provisioning/dashboards/
-```
-
-They will be auto-loaded on startup.
-
-## Data Persistence
-
-Volumes persist data across container restarts:
-
-- `postgres-data` - Database files
-- `prometheus-data` - Metrics (15-day retention)
-- `grafana-data` - Dashboards and settings
-- `loki-data` - Logs (30-day retention)
-- `cargo-cache` - Rust build cache
-
-## Troubleshooting
-
-### Database Connection Issues
+2. Start stack:
 
 ```bash
-# Check PostgreSQL is running
-docker-compose -f infra/docker-compose.yml logs postgres
-
-# Verify database connectivity
-docker-compose -f infra/docker-compose.yml exec backend \
-  psql $DATABASE_URL -c "SELECT 1"
+./scripts/up-dev.sh
 ```
 
-### Services Not Starting
+`migrate` is expected to exit `0` after applying migrations.
+
+3. Reset DB when needed:
 
 ```bash
-# Check service health
-docker-compose -f infra/docker-compose.yml ps
-
-# View detailed logs
-docker-compose -f infra/docker-compose.yml logs --tail=100
+./scripts/reset-dev-db.sh
 ```
 
-### Reset Everything
+4. Run smoke checks:
 
 ```bash
-# Stop all services
-docker-compose -f infra/docker-compose.yml down
-
-# Remove volumes (deletes data!)
-docker volume rm reqstly_postgres-data \
-  reqstly_prometheus-data \
-  reqstly_grafana-data \
-  reqstly_loki-data
-
-# Restart
-docker-compose -f infra/docker-compose.yml up -d
+./scripts/smoke-check.sh
 ```
 
-## Development Workflow
+## Operational Rules
 
-### Backend Development
+- App business logic must only use `app.app_users` as identity root.
+- Do not bind business logic to provider-internal identity tables.
+- Keep same-site browser session path as default auth path.
+- Keep CI smoke checks green before promoting changes to production.
+- Keep `/ws` routed to backend on app domains (do not proxy websocket path to frontend).
 
-Backend runs with hot reload. Changes to `backend/src/` trigger recompilation.
+## TLS and Domains (Cloudflare)
+
+- If Cloudflare SSL mode is `Full (strict)`, origin cert SANs must cover both app and API hostnames.
+- `*.reqstly.com` covers `dev.reqstly.com` but does not cover `api.dev.reqstly.com`.
+- For dev subdomains, include either:
+  - explicit `api.dev.reqstly.com`, or
+  - wildcard `*.dev.reqstly.com`.
+- If cert/key files are updated on host, recreate caddy to reload files/config:
 
 ```bash
-# View backend logs
-docker-compose -f infra/docker-compose.yml logs -f backend
+cd ~/reqstly-dev
+docker compose --env-file .env -f infra/docker-compose.yml up -d --force-recreate caddy
 ```
-
-### Frontend Development
-
-Frontend runs with HMR (Hot Module Replacement).
-
-```bash
-# View frontend logs
-docker-compose -f infra/docker-compose.yml logs -f frontend
-```
-
-### Database Migrations
-
-Migrations run automatically on backend startup. To manually run:
-
-```bash
-docker-compose -f infra/docker-compose.yml exec backend \
-  sqlx migrate run
-```
-
-## Monitoring
-
-### Metrics
-
-Prometheus scrapes metrics every 15 seconds from:
-- Backend (`/metrics` endpoint)
-- Prometheus (self-monitoring)
-- Grafana
-- Loki
-
-View in Grafana: http://localhost:3001
-
-### Logs
-
-Loki aggregates logs from all containers. View in Grafana:
-1. Open Grafana
-2. Go to Explore
-3. Select Loki datasource
-4. Query by label: `{service="backend"}`
-
-### Health Checks
-
-- **Backend**: `curl http://localhost:3000/health`
-- **Database**: PostgreSQL healthcheck in docker-compose
-- **Frontend**: Check browser console
-
-## Production Considerations
-
-For production deployment (Phase 5):
-
-1. **Use Docker Swarm** instead of Docker Compose
-2. **Enable Caddy** for TLS termination
-3. **Use Docker secrets** for sensitive data
-4. **Configure backup scripts** for PostgreSQL
-5. **Set up log rotation** for Loki
-6. **Configure alerting** in Prometheus
-7. **Update CORS settings** for production domain
-
-## Related Documentation
-
-- [Main README](../README.md)
-- [CLAUDE.md](../CLAUDE.md) - Architecture overview
-- [PLAN.md](../docs/PLAN.md) - Implementation plan
-- [Backend README](../backend/README.md)
-- [Frontend README](../frontend/README.md)

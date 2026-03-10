@@ -1,126 +1,112 @@
 # Reqstly
 
-A learning project to build an internal request management system. This is a personal project for exploring Docker Swarm, Rust backend development, React frontend, and modern authentication patterns.
+Reqstly is a request-management platform with an embedded-auth Rust backend, SvelteKit frontend, and self-hosted infrastructure.
 
-## What is Reqstly?
+## Stack
 
-A simple ticketing system where teams can:
-- Submit requests (IT, Ops, Admin, HR)
-- Track status (Open → In Progress → Resolved)
-- View audit history
-- Login via Azure AD or Passkeys
+- Backend: Rust, Axum, SQLx, PostgreSQL
+- Frontend: SvelteKit, Bun, Tailwind, shadcn-svelte
+- Auth: backend-owned auth (`password-auth`, `webauthn-rs`, `tower-sessions`)
+- Realtime: Axum WebSocket (`/ws`)
+- Infra: Docker Compose, Caddy, Redis, Prometheus, Loki, Promtail, Grafana
 
-This is **not** a production work project - it's a personal learning project to gain experience with:
-- Docker Swarm orchestration on a single VPS
-- Rust backend with Axum framework
-- React frontend with TypeScript and Vite
-- PostgreSQL with sqlx (compile-time checked queries)
-- Azure AD OIDC integration
-- WebAuthn Passkeys implementation
-- Full observability stack (Prometheus, Loki, Grafana)
+## Identity and Auth Model
 
-## Architecture
+- `app.app_users` is the canonical identity table.
+- Business foreign keys point only to `app.app_users.id`.
+- Password + passkey auth is first-party and handled in backend `/api/v1/auth/*` routes.
+- Browser auth is cookie/session-first.
+- WebSocket supports session and ws bearer-token compatibility (`/api/v1/auth/ws-token`).
 
+## Repository Layout
+
+```text
+reqstly/
+├── backend/
+├── frontend/
+├── docs/
+├── infra/
+│   ├── docker-compose.dev.yml
+│   ├── docker-compose.yml
+│   ├── observability/
+│   └── proxy/caddy/
+├── scripts/
+├── AGENTS.md
+├── .env.example
+├── .env.local.example
+└── .env.local
 ```
-Single VPS (Docker Swarm)
-├── Caddy (reverse proxy, auto-TLS)
-├── Frontend (Vite + TypeScript + React)
-├── Backend (Rust, 2 replicas)
-├── PostgreSQL
-└── Monitoring (Prometheus, Loki, Grafana)
+
+## Local Development
+
+Prerequisites:
+
+- Docker with Compose plugin
+- `bun`
+- `curl`
+- `openssl`
+
+Setup and run:
+
+```bash
+./scripts/setup-dev.sh
+./scripts/up-dev.sh
 ```
 
-## Tech Stack
+Useful commands:
 
-- **Orchestration**: Docker Swarm (single VPS deployment)
-- **Reverse Proxy**: Caddy 2.7 (auto-TLS)
-- **Frontend**: Vite + TypeScript + React
-- **Backend**: Rust with Axum framework
-- **Database**: PostgreSQL 16 with sqlx
-- **Auth**: Azure AD SSO + Passkeys (WebAuthn)
-- **Observability**: Prometheus + Loki + Grafana
-- **CI/CD**: GitHub Actions
+- `./scripts/reset-dev-db.sh`
+- `./scripts/test-backend.sh`
+- `./scripts/smoke-check.sh`
 
-## Getting Started
+Backend checks:
 
-### Prerequisites
-
-- Docker and Docker Swarm
-- Domain name pointing to your VPS
-- Azure AD tenant (for SSO)
-- VPS: 2 vCPUs, 4GB RAM, 80GB SSD
-
-### Quick Start
-
-1. Clone and configure:
-   ```bash
-   git clone https://github.com/yourusername/reqstly.git
-   cd reqstly
-   cp .env.example .env
-   # Edit .env with your settings
-   ```
-
-2. Setup VPS:
-   ```bash
-   ./scripts/setup-vps.sh user@your-vps-ip
-   ```
-
-3. Deploy:
-   ```bash
-   ./scripts/deploy.sh user@your-vps-ip
-   ```
-
-4. Access at `https://your-domain.com`
-
-### Local Development
-
-**Backend (Rust)**
 ```bash
 cd backend
-cargo run
+cargo fmt -- --check
+cargo check
+cargo test --lib
 ```
 
-**Frontend (React)**
+Frontend checks:
+
 ```bash
 cd frontend
-bun install
-bun run dev
+bun install --frozen-lockfile
+bun run check
+bun run build
 ```
 
-**All Services (Docker)**
+## Production Deploy
+
+- Use `.env` values for target environment.
+- Place Cloudflare origin cert/key on host:
+  - `~/certs/reqstly.pem`
+  - `~/certs/reqstly.key`
+- Restrict permissions (`chmod 600`).
+- Ensure certificate SANs cover both `APP_DOMAIN` and `API_DOMAIN`.
+  - Example: `*.reqstly.com` does not cover `api.dev.reqstly.com`.
+  - Include `api.dev.reqstly.com` or `*.dev.reqstly.com` for dev API subdomains.
+
+Start/update stack:
+
 ```bash
-docker-compose -f infra/docker-compose.yml up --build
+./scripts/up-prod.sh
 ```
 
-## What I'm Learning
+## CI/CD
 
-This project helps me explore:
-
-1. **DevOps Patterns**: Docker Swarm, overlay networks, secrets management, rolling updates
-2. **Backend Development**: Rust, Axum, async programming, database patterns
-3. **Frontend Development**: React, TypeScript, modern tooling
-4. **Authentication**: OIDC integration, WebAuthn, session management
-5. **Observability**: Metrics, structured logging, dashboards, alerting
-6. **Security**: Network isolation, container hardening, secure session handling
-
-## Project Structure
-
-```
-reqstly/
-├── backend/          # Rust API server
-├── frontend/         # React TypeScript frontend
-├── infra/            # Docker configs, monitoring
-├── scripts/          # Deployment automation
-└── docs/             # Planning and documentation
-```
+- Push `dev` => CI + deploy to dev environment
+- Push `master` => CI + deploy to production environment
+- Smoke checks run in CI
 
 ## Documentation
 
-- [Implementation Plan](docs/PLAN.md) - 14-day development roadmap
-
-## Status
-
-This is a work in progress. See [docs/PLAN.md](docs/PLAN.md) for current implementation status.
+- Plan and gates: [docs/PLAN.md](docs/PLAN.md)
+- Improvements and checklist: [docs/improvements.md](docs/improvements.md)
+- Frontend/API map: [docs/frontend_functionality.md](docs/frontend_functionality.md)
+- Infra runbook: [infra/README.md](infra/README.md)
+- Agent conventions: [AGENTS.md](AGENTS.md)
 
 ## License
 

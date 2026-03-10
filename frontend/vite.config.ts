@@ -1,15 +1,22 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 
-// https://vite.dev/config/
+const usePolling = process.env.VITE_USE_POLLING === 'true';
+const pollingInterval = Number(process.env.VITE_POLLING_INTERVAL ?? '1000');
+
 export default defineConfig({
-  plugins: [react()],
-  server: {
-    host: '0.0.0.0', // Allow Docker host access
-    port: 5173,
-    strictPort: true,
-    watch: {
-      usePolling: true, // Fix for Docker file watching
-    },
-  },
-})
+	plugins: [tailwindcss(), sveltekit()],
+	optimizeDeps: {
+		// Keep dev dependency optimization deterministic to avoid stale hashed module URLs
+		// during container startup/reload behind the reverse proxy.
+		holdUntilCrawlEnd: true
+	},
+	server: {
+		watch: {
+			usePolling,
+			interval: pollingInterval,
+			ignored: ['**/.git/**', '**/.svelte-kit/**', '**/node_modules/**']
+		}
+	}
+});

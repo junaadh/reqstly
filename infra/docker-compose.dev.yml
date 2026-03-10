@@ -1,215 +1,246 @@
-
-networks:
-  reqstly-public:
-    driver: bridge
-  reqstly-internal:
-    driver: bridge
-    internal: true
-  reqstly-monitoring:
-    driver: bridge
-
 services:
-  postgres:
-    image: postgres:16-alpine
+  db:
+    container_name: db
+    image: postgres:16
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-reqstly}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: ${POSTGRES_DB:-reqstly}
-    networks:
-      - reqstly-internal
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reqstly}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-postgres}"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    mem_limit: 512m
-    cpus: 0.5
+      retries: 10
+      start_period: 15s
+    ports:
+      - "127.0.0.1:${TEST_DATABASE_PORT:-54323}:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      
+      - db-data:/var/lib/postgresql/data
+
   redis:
+    container_name: redis
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
-    networks:
-      - reqstly-internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
-    mem_limit: 256m
-    cpus: 0.25
     volumes:
       - redis-data:/data
 
+  migrate:
+    container_name: migrate
+    image: nxyt/sqlx-cli:v0.70
+    platform: linux/amd64
+    command: >
+      sh -c "
+        sqlx database create --database-url \"$$DATABASE_URL\" || true &&
+        sqlx migrate run --database-url \"$$DATABASE_URL\" --source /migrations
+      "
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD_ENCODED:-${POSTGRES_PASSWORD}}@db:5432/${POSTGRES_DB:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ../backend/migrations:/migrations:ro
+
   backend:
+    container_name: backend
     build:
       context: ../backend
-      target: ${BACKEND_BUILD_TARGET:-development}
+      target: development
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: ${BACKEND_HEALTH_START_PERIOD:-120s}
     environment:
-      REDIS__URL: redis://redis:6379
-      DATABASE__URL: postgresql://${POSTGRES_USER:-reqstly}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-reqstly}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-reqstly}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-reqstly}
-      RUST__LOG: ${RUST_LOG:-info}
-      JWT__SECRET: ${JWT_SECRET:-change-this-secret-in-production}
-      JWT__EXPIRATION_HOURS: 24
-      AZURE_AD__CLIENT_ID: ${AZURE_AD_CLIENT_ID:-}
-      AZURE_AD__TENANT_ID: ${AZURE_AD_TENANT_ID:-}
-      AZURE_AD__CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET:-}
-      PASSKEY__RP_ID: ${RP_ID:-localhost}
-      PASSKEY__ORIGIN: ${ORIGIN:-http://localhost:80}
+      DATABASE__URL: postgres://postgres:${POSTGRES_PASSWORD_ENCODED:-${POSTGRES_PASSWORD}}@db:5432/${POSTGRES_DB:-postgres}
       SERVER__PORT: 3000
-      SERVER__BASE_URL: ${SERVER_BASE_URL:-http://api.localhost}
-    # env_file:
-      # - ../.env.local
-    networks:
-      - reqstly-public
-      - reqstly-internal
-      - reqstly-monitoring
+      SERVER__BASE_URL: ${API_URL:-https://api.localhost}
+      CORS__ALLOWED_ORIGIN: ${APP_URL:-https://localhost}
+      AUTH__WS_TOKEN_SECRET: ${AUTH__WS_TOKEN_SECRET:-dev-ws-token-secret}
+      AUTH__WS_TOKEN_ISSUER: ${AUTH__WS_TOKEN_ISSUER:-reqstly.local/ws}
+      AUTH__SESSION_COOKIE_NAME: ${AUTH__SESSION_COOKIE_NAME:-reqstly_session}
+      AUTH__SESSION_IDLE_MINUTES: ${AUTH__SESSION_IDLE_MINUTES:-480}
+      AUTH__SESSION_SECURE: ${AUTH__SESSION_SECURE:-false}
+      AUTH__WEBAUTHN_RP_ID: ${AUTH__WEBAUTHN_RP_ID:-localhost}
+      AUTH__WEBAUTHN_RP_ORIGIN: ${AUTH__WEBAUTHN_RP_ORIGIN:-https://localhost}
+      AUTH__WEBAUTHN_RP_NAME: ${AUTH__WEBAUTHN_RP_NAME:-Reqstly}
+      LOGGING__LEVEL: ${LOGGING__LEVEL:-reqstly_backend=info,tower_http=info,axum=info}
+      LOGGING__FORMAT: ${LOGGING__FORMAT:-json}
+      LOGGING__SERVICE_NAME: ${LOGGING__SERVICE_NAME:-reqstly-backend}
+      LOGGING__ENVIRONMENT: ${LOGGING__ENVIRONMENT:-dev}
+      RUST_LOG: ${RUST_LOG:-info}
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
+      db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    expose:
-      - 3000
-    mem_limit: 8g
-    cpus: 1
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
     volumes:
       - ../backend:/app
-      - /tmp/cargo-cache:/usr/local/cargo/registry:rw
-
-  migrate:
-    build:
-      context: ../backend
-      target: development
-    command: >
-      sh -c "
-        sqlx database create || true &&
-        sqlx migrate run
-      "
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-reqstly}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-reqstly}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - reqstly-internal
-    mem_limit: 512m
-    cpus: 0.5
-    volumes:
-      - ../backend:/app
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - backend-target:/app/target
 
   frontend:
+    container_name: frontend
     build:
       context: ../frontend
       target: development
-    container_name: reqstly-frontend
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then((r)=>process.exit((r.status>=200&&r.status<400)?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 15s
+      retries: 10
+      start_period: 45s
     environment:
-      VITE_API_URL: http://api.localhost
-    networks:
-      - reqstly-public
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 3000
+      CHOKIDAR_USEPOLLING: "${CHOKIDAR_USE_POLLING:-false}"
+      CHOKIDAR_INTERVAL: "${CHOKIDAR_INTERVAL:-1000}"
+      VITE_USE_POLLING: "${VITE_USE_POLLING:-false}"
+      VITE_POLLING_INTERVAL: "${VITE_POLLING_INTERVAL:-1000}"
+      ORIGIN: ${APP_URL:-https://localhost}
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      PORT_HEADER: x-forwarded-port
+      PUBLIC_API_BASE_URL: ${API_URL:-https://api.localhost}
+      PRIVATE_API_BASE_URL: ${PRIVATE_API_BASE_URL:-http://backend:3000}
+    command: >
+      sh -c "bun install --frozen-lockfile && bun run dev:docker"
     depends_on:
-      - backend
-    ports:
-      - "5173:5173"
-    mem_limit: 2g
-    cpus: 1
+      backend:
+        condition: service_healthy
+    expose:
+      - 3000
     volumes:
-      - ../frontend:/usr/src/app
-      - frontend-node-modules:/usr/src/app/node_modules
-
-  prometheus:
-    image: prom/prometheus:v2.55.1
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/tmp/prometheus'
-      - '--storage.tsdb.retention.time=15d'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-    networks:
-      - reqstly-monitoring
-    depends_on:
-      - backend
-    mem_limit: 2g
-    cpus: 1
-    tmpfs:
-      - /tmp/prometheus
-    volumes:
-      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-
-  grafana:
-    image: grafana/grafana:11.4.0
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: http://localhost:3001
-    networks:
-      - reqstly-public
-      - reqstly-monitoring
-    depends_on:
-      - prometheus
-    mem_limit: 256m
-    cpus: 0.25
-    tmpfs:
-      - /var/lib/grafana
-
-  loki:
-    image: grafana/loki:3.3.0
-    command:
-      - '-config.file=/etc/loki/local-config.yaml'
-      - '-config.expand-env=true'
-    networks:
-      - reqstly-monitoring
-    mem_limit: 1g
-    cpus: 0.5
-    tmpfs:
-      - /tmp/loki
-    volumes:
-      - ./observability/loki/loki.yml:/etc/loki/local-config.yaml:ro
-
-  promtail:
-    image: grafana/promtail:3.3.0
-    command:
-      - '-config.file=/etc/promtail/config.yml'
-      - '-config.expand-env=true'
-    networks:
-      - reqstly-monitoring
-    depends_on:
-      - loki
-    mem_limit: 256m
-    cpus: 0.25
-    tmpfs:
-      - /tmp/positions
-    volumes:
-      - ./observability/promtail/promtail.yml:/etc/promtail/config.yml:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../frontend:/app
+      - frontend-node-modules:/app/node_modules
+      - frontend-bun-cache:/root/.bun/install/cache
 
   caddy:
+    container_name: caddy
     image: caddy:2.7-alpine
     ports:
       - "80:80"
       - "443:443"
       - "2019:2019"
-    networks:
-      - reqstly-public
     depends_on:
-      - frontend
-      - backend
-      - grafana
-    mem_limit: 256m
-    cpus: 0.25
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     tmpfs:
       - /data
       - /config
     volumes:
-      - ./proxy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./proxy/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - ./proxy/caddy/certs/dev:/etc/caddy/certs/dev:ro
+
+  postgres-exporter:
+    container_name: postgres-exporter
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD_ENCODED:-${POSTGRES_PASSWORD}}@db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - 9187
+
+  redis-exporter:
+    container_name: redis-exporter
+    image: oliver006/redis_exporter:v1.62.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - 9121
+
+  loki:
+    container_name: loki
+    image: grafana/loki:2.9.8
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+
+  promtail:
+    container_name: promtail
+    image: grafana/promtail:2.9.8
+    command: ["-config.file=/etc/promtail/config.yml"]
+    depends_on:
+      loki:
+        condition: service_started
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.53.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      backend:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+      redis-exporter:
+        condition: service_started
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:11.2.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
 
 volumes:
-  postgres-data:
+  db-data:
   redis-data:
+  cargo-registry:
+  cargo-git:
+  backend-target:
   frontend-node-modules:
+  frontend-bun-cache:
+  loki-data:
+  prometheus-data:
+  grafana-data:

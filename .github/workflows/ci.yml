@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master, dev]
+  push:
+    branches: [master, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-format:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Cargo fmt
+        run: cargo fmt --check
+
+  backend-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  backend-openapi-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: OpenAPI parity check
+        run: ./scripts/openapi-parity-check.py
+
+  backend-test:
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_MIN_COVERAGE: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare CI env
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" FORCE=1 ROTATE_KEYS=1 ./scripts/setup-dev.sh
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Backend tests (unit + integration + coverage)
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" ./scripts/test-backend.sh
+
+  auth-cors-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare CI env
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" FORCE=1 ROTATE_KEYS=1 ./scripts/setup-dev.sh
+
+      - name: Auth CORS regression check
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" AUTH_CORS_CLEANUP=true ./scripts/test-auth-cors.sh
+
+  frontend-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.23
+
+      - name: Install frontend deps
+        run: bun install --frozen-lockfile
+
+      - name: Frontend type/check
+        run: bun run check
+
+      - name: Frontend build
+        run: bun run build
+
+  stack-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare CI env
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" FORCE=1 ROTATE_KEYS=1 ./scripts/setup-dev.sh
+
+      - name: Start local stack for smoke checks
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" COMPOSE_BUILD=1 ./scripts/up-dev.sh backend frontend caddy
+
+      - name: Run smoke checks
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" ./scripts/smoke-check.sh
+
+      - name: Teardown local stack
+        if: always()
+        run: ENV_FILE="${GITHUB_WORKSPACE}/.env.ci" docker compose --env-file "${GITHUB_WORKSPACE}/.env.ci" -f infra/docker-compose.dev.yml down -v --remove-orphans
